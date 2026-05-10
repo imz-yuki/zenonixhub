@@ -1,45 +1,98 @@
 -- ====================================================================
--- ZENONIX SAVE & TELEPORT V5 - MODERN / CLEAN / DETAILS
--- Session-based save list
--- Loading screen: 2 seconds
--- Features:
--- - Save / Teleport / Delete positions
--- - Search filter
--- - Favorite pin
--- - Selected details panel
--- - Smooth loading animation
--- - Minimize / Close
+-- ZENONIX SAVE & TELEPORT V6 — SAKURA EDITION
+-- Theme: Hồng phấn & Trắng ngà — Luxury / Soft Glow
+-- Tác giả: Zenonix Team
+-- Tính năng:
+--   ✦ Lưu / Teleport / Xóa vị trí
+--   ✦ Tìm kiếm thông minh
+--   ✦ Ghim yêu thích (Favorite)
+--   ✦ Bảng chi tiết vị trí đang chọn
+--   ✦ Tag / Nhãn màu cho từng vị trí
+--   ✦ Hiệu ứng Ripple khi click nút
+--   ✦ Thanh trạng thái động (toast)
+--   ✦ Bộ đếm teleport
+--   ✦ Loading screen sang trọng
+--   ✦ Animation mở / thu gọn / đóng
+--   ✦ Kéo thả (drag)
 -- ====================================================================
 
-local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
+local Players        = game:GetService("Players")
+local TweenService   = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local HttpService = game:GetService("HttpService")
+local HttpService    = game:GetService("HttpService")
+local RunService     = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
-local savedPositions = {}
-local selectedId = nil
+-- ==================== STATE ====================
+local savedPositions = {}  -- {Id, Name, CFrame, Favorited, CreatedAt, TpCount, Tag}
+local selectedId     = nil
 local pendingDeleteId = nil
-local saveDebounce = false
-local minimized = false
+local saveDebounce   = false
+local minimized      = false
+local totalTeleports = 0
+
+local TAGS = {"🌸 Home", "⚔️ Combat", "🏆 Farm", "🗺️ Explore", "⭐ Special"}
+local TAG_COLORS = {
+	["🌸 Home"]    = Color3.fromRGB(255, 160, 200),
+	["⚔️ Combat"]  = Color3.fromRGB(255, 110, 130),
+	["🏆 Farm"]    = Color3.fromRGB(255, 200, 80),
+	["🗺️ Explore"] = Color3.fromRGB(100, 210, 255),
+	["⭐ Special"] = Color3.fromRGB(200, 160, 255),
+}
+local selectedTagFilter = nil  -- nil = all
+local currentTagIndex   = 1   -- for cycling when saving
+
+-- ==================== COLORS ====================
+local C = {
+	bg          = Color3.fromRGB(252, 245, 250),
+	bgCard      = Color3.fromRGB(255, 250, 254),
+	bgDeep      = Color3.fromRGB(248, 238, 246),
+	topbar      = Color3.fromRGB(255, 240, 248),
+	accent      = Color3.fromRGB(240, 100, 160),
+	accentLight = Color3.fromRGB(255, 180, 215),
+	accentDark  = Color3.fromRGB(200, 60, 120),
+	pink2       = Color3.fromRGB(255, 210, 230),
+	white       = Color3.fromRGB(255, 255, 255),
+	textMain    = Color3.fromRGB(80, 50, 70),
+	textSub     = Color3.fromRGB(160, 120, 145),
+	textFaint   = Color3.fromRGB(200, 170, 190),
+	stroke      = Color3.fromRGB(240, 195, 220),
+	strokeSel   = Color3.fromRGB(240, 100, 160),
+	green       = Color3.fromRGB(80, 200, 140),
+	red         = Color3.fromRGB(255, 100, 130),
+	gold        = Color3.fromRGB(255, 200, 80),
+	scrollBar   = Color3.fromRGB(240, 140, 190),
+	delBg       = Color3.fromRGB(255, 235, 240),
+	delConfirm  = Color3.fromRGB(255, 200, 210),
+}
 
 -- ==================== HELPERS ====================
-local function makeCorner(parent, radius)
+local function makeCorner(p, r)
 	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, radius)
-	c.Parent = parent
+	c.CornerRadius = UDim.new(0, r)
+	c.Parent = p
 	return c
 end
 
-local function makeStroke(parent, color, thickness, transparency)
+local function makeStroke(p, color, thick, transp)
 	local s = Instance.new("UIStroke")
-	s.Color = color
-	s.Thickness = thickness or 1
-	s.Transparency = transparency or 0
+	s.Color = color or C.stroke
+	s.Thickness = thick or 1
+	s.Transparency = transp or 0
 	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	s.Parent = parent
+	s.Parent = p
 	return s
+end
+
+local function makePadding(p, top, bottom, left, right)
+	local pad = Instance.new("UIPadding")
+	pad.PaddingTop    = UDim.new(0, top    or 0)
+	pad.PaddingBottom = UDim.new(0, bottom or 0)
+	pad.PaddingLeft   = UDim.new(0, left   or 0)
+	pad.PaddingRight  = UDim.new(0, right  or 0)
+	pad.Parent = p
+	return pad
 end
 
 local function tween(obj, info, props)
@@ -48,18 +101,20 @@ local function tween(obj, info, props)
 	return t
 end
 
-local function round(n)
-	return math.floor(n * 10 + 0.5) / 10
-end
+local TQ  = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TQS = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TSine = TweenInfo.new(1.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+
+local function round(n) return math.floor(n * 10 + 0.5) / 10 end
 
 local function formatPos(cf)
 	local p = cf.Position
-	return string.format("X: %.1f   Y: %.1f   Z: %.1f", round(p.X), round(p.Y), round(p.Z))
+	return string.format("X: %.1f  Y: %.1f  Z: %.1f", round(p.X), round(p.Y), round(p.Z))
 end
 
 local function getCharacter()
 	local char = player.Character or player.CharacterAdded:Wait()
-	local hrp = char:WaitForChild("HumanoidRootPart", 5)
+	local hrp  = char:WaitForChild("HumanoidRootPart", 5)
 	return char, hrp
 end
 
@@ -67,281 +122,562 @@ local function makeGuid()
 	return HttpService:GenerateGUID(false)
 end
 
--- ==================== GUI ROOT ====================
+local function fmtTime(t)
+	return os.date("%H:%M — %d/%m/%Y", t or os.time())
+end
+
+-- ==================== ROOT ====================
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "ZenonixSaveTPV5"
+ScreenGui.Name = "ZenonixV6_Sakura"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.Parent = player:WaitForChild("PlayerGui")
 
 -- ==================== LOADING SCREEN ====================
-local LoadingFrame = Instance.new("Frame")
-LoadingFrame.Parent = ScreenGui
-LoadingFrame.BackgroundColor3 = Color3.fromRGB(10, 11, 15)
-LoadingFrame.Size = UDim2.new(1, 0, 1, 0)
-LoadingFrame.BorderSizePixel = 0
+local LoadBG = Instance.new("Frame")
+LoadBG.Parent = ScreenGui
+LoadBG.BackgroundColor3 = Color3.fromRGB(255, 242, 250)
+LoadBG.Size = UDim2.new(1, 0, 1, 0)
+LoadBG.BorderSizePixel = 0
 
-local LoadingCard = Instance.new("Frame")
-LoadingCard.Parent = LoadingFrame
-LoadingCard.BackgroundColor3 = Color3.fromRGB(18, 20, 27)
-LoadingCard.Size = UDim2.new(0, 360, 0, 140)
-LoadingCard.Position = UDim2.new(0.5, -180, 0.5, -70)
-LoadingCard.BorderSizePixel = 0
-makeCorner(LoadingCard, 14)
-makeStroke(LoadingCard, Color3.fromRGB(0, 170, 255), 2, 0.15)
-
-local LoadingTitle = Instance.new("TextLabel")
-LoadingTitle.Parent = LoadingCard
-LoadingTitle.BackgroundTransparency = 1
-LoadingTitle.Position = UDim2.new(0.05, 0, 0.12, 0)
-LoadingTitle.Size = UDim2.new(0.9, 0, 0, 24)
-LoadingTitle.Font = Enum.Font.GothamBold
-LoadingTitle.Text = "ZENONIX | SAVING SYSTEM"
-LoadingTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-LoadingTitle.TextSize = 16
-
-local LoadingSub = Instance.new("TextLabel")
-LoadingSub.Parent = LoadingCard
-LoadingSub.BackgroundTransparency = 1
-LoadingSub.Position = UDim2.new(0.05, 0, 0.36, 0)
-LoadingSub.Size = UDim2.new(0.9, 0, 0, 20)
-LoadingSub.Font = Enum.Font.Gotham
-LoadingSub.Text = "Đang khởi tạo giao diện..."
-LoadingSub.TextColor3 = Color3.fromRGB(170, 175, 190)
-LoadingSub.TextSize = 11
-
-local ProgressBack = Instance.new("Frame")
-ProgressBack.Parent = LoadingCard
-ProgressBack.BackgroundColor3 = Color3.fromRGB(30, 33, 43)
-ProgressBack.Position = UDim2.new(0.05, 0, 0.68, 0)
-ProgressBack.Size = UDim2.new(0.9, 0, 0, 12)
-ProgressBack.BorderSizePixel = 0
-makeCorner(ProgressBack, 8)
-
-local ProgressFill = Instance.new("Frame")
-ProgressFill.Parent = ProgressBack
-ProgressFill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-ProgressFill.Size = UDim2.new(0, 0, 1, 0)
-ProgressFill.BorderSizePixel = 0
-makeCorner(ProgressFill, 8)
-
-local ProgressText = Instance.new("TextLabel")
-ProgressText.Parent = LoadingCard
-ProgressText.BackgroundTransparency = 1
-ProgressText.Position = UDim2.new(0.05, 0, 0.81, 0)
-ProgressText.Size = UDim2.new(0.9, 0, 0, 18)
-ProgressText.Font = Enum.Font.GothamSemibold
-ProgressText.Text = "0%"
-ProgressText.TextColor3 = Color3.fromRGB(220, 225, 235)
-ProgressText.TextSize = 11
-
-do
-	local steps = 40
-	for i = 1, steps do
-		local alpha = i / steps
-		ProgressFill.Size = UDim2.new(alpha, 0, 1, 0)
-
-		if alpha < 0.3 then
-			LoadingSub.Text = "Đang nạp thành phần giao diện..."
-		elseif alpha < 0.6 then
-			LoadingSub.Text = "Đang chuẩn bị danh sách vị trí..."
-		elseif alpha < 0.9 then
-			LoadingSub.Text = "Đang tối ưu khung điều khiển..."
-		else
-			LoadingSub.Text = "Sẵn sàng..."
-		end
-
-		ProgressText.Text = tostring(math.floor(alpha * 100)) .. "%"
-		task.wait(0.05)
-	end
+-- Decorative petals
+for i = 1, 8 do
+	local petal = Instance.new("Frame")
+	petal.Parent = LoadBG
+	petal.BackgroundColor3 = Color3.fromRGB(255, 210, 230)
+	petal.BackgroundTransparency = 0.55
+	local sz = math.random(30, 80)
+	petal.Size = UDim2.new(0, sz, 0, sz)
+	petal.Position = UDim2.new(math.random(0, 100) / 100, 0, math.random(0, 100) / 100, 0)
+	petal.BorderSizePixel = 0
+	petal.Rotation = math.random(0, 360)
+	makeCorner(petal, math.random(20, 50))
 end
 
-tween(LoadingCard, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-	BackgroundTransparency = 1
+local LoadCard = Instance.new("Frame")
+LoadCard.Parent = LoadBG
+LoadCard.BackgroundColor3 = C.white
+LoadCard.Size = UDim2.new(0, 380, 0, 170)
+LoadCard.Position = UDim2.new(0.5, -190, 0.5, -85)
+LoadCard.BorderSizePixel = 0
+makeCorner(LoadCard, 20)
+makeStroke(LoadCard, C.accentLight, 2, 0)
+
+local LcGrad = Instance.new("UIGradient")
+LcGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 240, 250)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
 })
-tween(LoadingTitle, TweenInfo.new(0.2), {TextTransparency = 1})
-tween(LoadingSub, TweenInfo.new(0.2), {TextTransparency = 1})
-tween(ProgressText, TweenInfo.new(0.2), {TextTransparency = 1})
-tween(ProgressBack, TweenInfo.new(0.2), {BackgroundTransparency = 1})
-tween(ProgressFill, TweenInfo.new(0.2), {BackgroundTransparency = 1})
+LcGrad.Rotation = 135
+LcGrad.Parent = LoadCard
 
-task.wait(0.22)
-LoadingFrame:Destroy()
+local LoadIcon = Instance.new("TextLabel")
+LoadIcon.Parent = LoadCard
+LoadIcon.BackgroundTransparency = 1
+LoadIcon.Position = UDim2.new(0, 0, 0, 14)
+LoadIcon.Size = UDim2.new(1, 0, 0, 32)
+LoadIcon.Font = Enum.Font.GothamBold
+LoadIcon.Text = "🌸  ZENONIX SYSTEM"
+LoadIcon.TextColor3 = C.accent
+LoadIcon.TextSize = 18
 
--- ==================== MAIN UI ====================
+local LoadSub = Instance.new("TextLabel")
+LoadSub.Parent = LoadCard
+LoadSub.BackgroundTransparency = 1
+LoadSub.Position = UDim2.new(0.05, 0, 0, 52)
+LoadSub.Size = UDim2.new(0.9, 0, 0, 18)
+LoadSub.Font = Enum.Font.Gotham
+LoadSub.Text = "Đang khởi động Sakura Edition..."
+LoadSub.TextColor3 = C.textSub
+LoadSub.TextSize = 11
+
+local PBG = Instance.new("Frame")
+PBG.Parent = LoadCard
+PBG.BackgroundColor3 = C.bgDeep
+PBG.Position = UDim2.new(0.05, 0, 0, 82)
+PBG.Size = UDim2.new(0.9, 0, 0, 10)
+PBG.BorderSizePixel = 0
+makeCorner(PBG, 8)
+
+local PFill = Instance.new("Frame")
+PFill.Parent = PBG
+PFill.BackgroundColor3 = C.accent
+PFill.Size = UDim2.new(0, 0, 1, 0)
+PFill.BorderSizePixel = 0
+makeCorner(PFill, 8)
+
+local PGrad = Instance.new("UIGradient")
+PGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, C.accentLight),
+	ColorSequenceKeypoint.new(1, C.accent),
+})
+PGrad.Parent = PFill
+
+local PPct = Instance.new("TextLabel")
+PPct.Parent = LoadCard
+PPct.BackgroundTransparency = 1
+PPct.Position = UDim2.new(0.05, 0, 0, 100)
+PPct.Size = UDim2.new(0.9, 0, 0, 16)
+PPct.Font = Enum.Font.GothamSemibold
+PPct.Text = "0%"
+PPct.TextColor3 = C.textSub
+PPct.TextSize = 10
+
+local LoadDots = Instance.new("TextLabel")
+LoadDots.Parent = LoadCard
+LoadDots.BackgroundTransparency = 1
+LoadDots.Position = UDim2.new(0.05, 0, 0, 120)
+LoadDots.Size = UDim2.new(0.9, 0, 0, 30)
+LoadDots.Font = Enum.Font.GothamBold
+LoadDots.Text = "✦ ✦ ✦"
+LoadDots.TextColor3 = C.accentLight
+LoadDots.TextSize = 20
+
+-- Animate dots
+local dotConn
+local dotState = 0
+dotConn = RunService.Heartbeat:Connect(function()
+	dotState = dotState + 1
+	if dotState % 18 == 0 then
+		local patterns = {"✦ · ·", "· ✦ ·", "· · ✦", "✦ ✦ ✦"}
+		LoadDots.Text = patterns[math.ceil(dotState / 18) % #patterns + 1]
+	end
+end)
+
+local steps = 40
+local msgs = {
+	"Đang tải giao diện hoa anh đào...",
+	"Chuẩn bị danh sách vị trí...",
+	"Tối ưu animation...",
+	"Sẵn sàng! 🌸"
+}
+
+for i = 1, steps do
+	local a = i / steps
+	PFill.Size = UDim2.new(a, 0, 1, 0)
+	PPct.Text = tostring(math.floor(a * 100)) .. "%"
+	local mi = math.ceil(a * #msgs)
+	if mi < 1 then mi = 1 end
+	if mi > #msgs then mi = #msgs end
+	LoadSub.Text = msgs[mi]
+	task.wait(0.05)
+end
+
+dotConn:Disconnect()
+
+tween(LoadCard, TQ, {BackgroundTransparency = 1})
+tween(LoadIcon, TQ, {TextTransparency = 1})
+tween(LoadSub, TQ, {TextTransparency = 1})
+tween(PPct, TQ, {TextTransparency = 1})
+tween(LoadDots, TQ, {TextTransparency = 1})
+tween(PBG, TQ, {BackgroundTransparency = 1})
+tween(PFill, TQ, {BackgroundTransparency = 1})
+task.wait(0.25)
+LoadBG:Destroy()
+
+-- ==================== MAIN FRAME ====================
 local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
+MainFrame.Name = "ZenonixMain"
 MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(14, 15, 20)
-MainFrame.Position = UDim2.new(0.35, 0, 0.18, 0)
-MainFrame.Size = UDim2.new(0, 420, 0, 520)
+MainFrame.BackgroundColor3 = C.bg
+MainFrame.Position = UDim2.new(0.33, 0, 0.12, 0)
+MainFrame.Size = UDim2.new(0, 460, 0, 580)
 MainFrame.BorderSizePixel = 0
-makeCorner(MainFrame, 14)
-makeStroke(MainFrame, Color3.fromRGB(0, 170, 255), 2, 0.1)
+makeCorner(MainFrame, 18)
+makeStroke(MainFrame, C.accentLight, 2, 0)
 
+-- Subtle gradient background
+local MainGrad = Instance.new("UIGradient")
+MainGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 248, 253)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(252, 238, 248)),
+})
+MainGrad.Rotation = 145
+MainGrad.Parent = MainFrame
+
+-- Top decorative bar
+local TopAccentBar = Instance.new("Frame")
+TopAccentBar.Parent = MainFrame
+TopAccentBar.BackgroundColor3 = C.accent
+TopAccentBar.BorderSizePixel = 0
+TopAccentBar.Size = UDim2.new(1, 0, 0, 3)
+TopAccentBar.Position = UDim2.new(0, 0, 0, 0)
+makeCorner(TopAccentBar, 18)
+
+local TopAccentBarBot = Instance.new("Frame")
+TopAccentBarBot.Parent = TopAccentBar
+TopAccentBarBot.BackgroundColor3 = C.accent
+TopAccentBarBot.BorderSizePixel = 0
+TopAccentBarBot.Size = UDim2.new(1, 0, 0.5, 0)
+TopAccentBarBot.Position = UDim2.new(0, 0, 0.5, 0)
+
+local TBarGrad = Instance.new("UIGradient")
+TBarGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, C.accentLight),
+	ColorSequenceKeypoint.new(0.5, C.accent),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 80, 160)),
+})
+TBarGrad.Parent = TopAccentBar
+
+-- ==================== TOPBAR ====================
 local Topbar = Instance.new("Frame")
 Topbar.Parent = MainFrame
-Topbar.BackgroundColor3 = Color3.fromRGB(20, 22, 30)
-Topbar.Size = UDim2.new(1, 0, 0, 54)
+Topbar.BackgroundColor3 = C.topbar
+Topbar.Size = UDim2.new(1, 0, 0, 60)
+Topbar.Position = UDim2.new(0, 0, 0, 3)
 Topbar.BorderSizePixel = 0
-makeCorner(Topbar, 14)
 
-local TopbarFix = Instance.new("Frame")
-TopbarFix.Parent = Topbar
-TopbarFix.BackgroundColor3 = Topbar.BackgroundColor3
-TopbarFix.BorderSizePixel = 0
-TopbarFix.Position = UDim2.new(0, 0, 0.5, 0)
-TopbarFix.Size = UDim2.new(1, 0, 0.5, 0)
+local TbGrad = Instance.new("UIGradient")
+TbGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 238, 248)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 248, 252)),
+})
+TbGrad.Rotation = 90
+TbGrad.Parent = Topbar
+
+-- Fix corners overlap
+local TbFix = Instance.new("Frame")
+TbFix.Parent = Topbar
+TbFix.BackgroundColor3 = C.topbar
+TbFix.BorderSizePixel = 0
+TbFix.Position = UDim2.new(0, 0, 0.55, 0)
+TbFix.Size = UDim2.new(1, 0, 0.5, 0)
+
+-- Logo icon flower
+local LogoIcon = Instance.new("TextLabel")
+LogoIcon.Parent = Topbar
+LogoIcon.BackgroundTransparency = 1
+LogoIcon.Position = UDim2.new(0, 14, 0.5, -14)
+LogoIcon.Size = UDim2.new(0, 28, 0, 28)
+LogoIcon.Font = Enum.Font.GothamBold
+LogoIcon.Text = "🌸"
+LogoIcon.TextSize = 22
+
+-- Animate logo spin slowly
+spawn(function()
+	while MainFrame and MainFrame.Parent do
+		for r = 0, 10, 1 do
+			if not LogoIcon or not LogoIcon.Parent then break end
+			LogoIcon.Rotation = r
+			task.wait(0.05)
+		end
+		for r = 10, -10, -1 do
+			if not LogoIcon or not LogoIcon.Parent then break end
+			LogoIcon.Rotation = r
+			task.wait(0.05)
+		end
+		for r = -10, 0, 1 do
+			if not LogoIcon or not LogoIcon.Parent then break end
+			LogoIcon.Rotation = r
+			task.wait(0.05)
+		end
+		task.wait(2)
+	end
+end)
 
 local Title = Instance.new("TextLabel")
 Title.Parent = Topbar
 Title.BackgroundTransparency = 1
-Title.Position = UDim2.new(0.04, 0, 0, 0)
-Title.Size = UDim2.new(0.75, 0, 1, 0)
+Title.Position = UDim2.new(0, 50, 0, 6)
+Title.Size = UDim2.new(0.65, 0, 0, 26)
 Title.Font = Enum.Font.GothamBold
-Title.Text = "ZENONIX | SAVE & TELEPORT"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextSize = 14
+Title.Text = "ZENONIX  SAKURA"
+Title.TextColor3 = C.accent
+Title.TextSize = 15
 Title.TextXAlignment = Enum.TextXAlignment.Left
 
-local TitleGradient = Instance.new("UIGradient")
-TitleGradient.Color = ColorSequence.new({
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 220, 255)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 120, 255))
+local TitleGrad = Instance.new("UIGradient")
+TitleGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, C.accent),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 80, 180)),
 })
-TitleGradient.Parent = Title
+TitleGrad.Parent = Title
 
-local CountLabel = Instance.new("TextLabel")
-CountLabel.Parent = Topbar
-CountLabel.BackgroundTransparency = 1
-CountLabel.Position = UDim2.new(0.04, 0, 0.5, -2)
-CountLabel.Size = UDim2.new(0.55, 0, 0, 18)
-CountLabel.Font = Enum.Font.Gotham
-CountLabel.Text = "0 vị trí đã lưu"
-CountLabel.TextColor3 = Color3.fromRGB(170, 175, 190)
-CountLabel.TextSize = 10
-CountLabel.TextXAlignment = Enum.TextXAlignment.Left
+local SubTitle = Instance.new("TextLabel")
+SubTitle.Parent = Topbar
+SubTitle.BackgroundTransparency = 1
+SubTitle.Position = UDim2.new(0, 50, 0, 32)
+SubTitle.Size = UDim2.new(0.65, 0, 0, 16)
+SubTitle.Font = Enum.Font.Gotham
+SubTitle.Text = "Save & Teleport  V6"
+SubTitle.TextColor3 = C.textFaint
+SubTitle.TextSize = 10
+SubTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Stats pill
+local StatPill = Instance.new("Frame")
+StatPill.Parent = Topbar
+StatPill.BackgroundColor3 = C.pink2
+StatPill.Position = UDim2.new(0, 50, 0.5, 0)
+StatPill.Size = UDim2.new(0, 120, 0, 16)
+makeCorner(StatPill, 8)
+
+local StatLabel = Instance.new("TextLabel")
+StatLabel.Parent = StatPill
+StatLabel.BackgroundTransparency = 1
+StatLabel.Size = UDim2.new(1, 0, 1, 0)
+StatLabel.Font = Enum.Font.GothamSemibold
+StatLabel.Text = "0 lưu  •  0 teleport"
+StatLabel.TextColor3 = C.accentDark
+StatLabel.TextSize = 9
 
 local MinButton = Instance.new("TextButton")
 MinButton.Parent = Topbar
-MinButton.BackgroundColor3 = Color3.fromRGB(34, 37, 48)
+MinButton.BackgroundColor3 = C.pink2
 MinButton.Text = "—"
-MinButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinButton.TextColor3 = C.accent
 MinButton.Font = Enum.Font.GothamBold
-MinButton.TextSize = 18
-MinButton.Size = UDim2.new(0, 28, 0, 24)
-MinButton.Position = UDim2.new(1, -66, 0.5, -12)
-makeCorner(MinButton, 6)
+MinButton.TextSize = 16
+MinButton.Size = UDim2.new(0, 30, 0, 26)
+MinButton.Position = UDim2.new(1, -70, 0.5, -13)
+makeCorner(MinButton, 8)
 
 local CloseButton = Instance.new("TextButton")
 CloseButton.Parent = Topbar
-CloseButton.BackgroundColor3 = Color3.fromRGB(55, 28, 34)
-CloseButton.Text = "X"
-CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.BackgroundColor3 = Color3.fromRGB(255, 225, 232)
+CloseButton.Text = "✕"
+CloseButton.TextColor3 = C.red
 CloseButton.Font = Enum.Font.GothamBold
 CloseButton.TextSize = 12
-CloseButton.Size = UDim2.new(0, 28, 0, 24)
-CloseButton.Position = UDim2.new(1, -34, 0.5, -12)
-makeCorner(CloseButton, 6)
+CloseButton.Size = UDim2.new(0, 30, 0, 26)
+CloseButton.Position = UDim2.new(1, -36, 0.5, -13)
+makeCorner(CloseButton, 8)
 
+-- Topbar separator
+local TbLine = Instance.new("Frame")
+TbLine.Parent = MainFrame
+TbLine.BackgroundColor3 = C.stroke
+TbLine.BorderSizePixel = 0
+TbLine.Position = UDim2.new(0.04, 0, 0, 63)
+TbLine.Size = UDim2.new(0.92, 0, 0, 1)
+
+-- ==================== TAG FILTER ROW ====================
+local TagRow = Instance.new("ScrollingFrame")
+TagRow.Parent = MainFrame
+TagRow.BackgroundTransparency = 1
+TagRow.BorderSizePixel = 0
+TagRow.Position = UDim2.new(0.04, 0, 0, 72)
+TagRow.Size = UDim2.new(0.92, 0, 0, 28)
+TagRow.ScrollBarThickness = 0
+TagRow.CanvasSize = UDim2.new(0, 0, 0, 0)
+
+local TagRowList = Instance.new("UIListLayout")
+TagRowList.Parent = TagRow
+TagRowList.FillDirection = Enum.FillDirection.Horizontal
+TagRowList.Padding = UDim.new(0, 6)
+TagRowList.SortOrder = Enum.SortOrder.LayoutOrder
+TagRowList.VerticalAlignment = Enum.VerticalAlignment.Center
+
+local function buildTagRow()
+	for _, c in ipairs(TagRow:GetChildren()) do
+		if c:IsA("TextButton") then c:Destroy() end
+	end
+
+	-- "Tất cả" button
+	local allBtn = Instance.new("TextButton")
+	allBtn.Parent = TagRow
+	allBtn.Font = Enum.Font.GothamSemibold
+	allBtn.TextSize = 10
+	allBtn.Text = "All"
+	allBtn.Size = UDim2.new(0, 40, 0, 22)
+	allBtn.BackgroundColor3 = selectedTagFilter == nil and C.accent or C.pink2
+	allBtn.TextColor3 = selectedTagFilter == nil and C.white or C.accentDark
+	allBtn.BorderSizePixel = 0
+	makeCorner(allBtn, 11)
+
+	allBtn.MouseButton1Click:Connect(function()
+		selectedTagFilter = nil
+		buildTagRow()
+	end)
+
+	for _, tag in ipairs(TAGS) do
+		local col = TAG_COLORS[tag] or C.accentLight
+		local btn = Instance.new("TextButton")
+		btn.Parent = TagRow
+		btn.Font = Enum.Font.GothamSemibold
+		btn.TextSize = 10
+		btn.Text = tag
+		btn.AutomaticSize = Enum.AutomaticSize.X
+		btn.Size = UDim2.new(0, 0, 0, 22)
+		btn.BackgroundColor3 = selectedTagFilter == tag and col or C.white
+		btn.TextColor3 = selectedTagFilter == tag and C.white or C.textSub
+		btn.BorderSizePixel = 0
+		makeCorner(btn, 11)
+		makeStroke(btn, col, 1, selectedTagFilter == tag and 1 or 0.3)
+		makePadding(btn, 0, 0, 8, 8)
+
+		btn.MouseButton1Click:Connect(function()
+			selectedTagFilter = (selectedTagFilter == tag) and nil or tag
+			buildTagRow()
+			-- refresh is called in refreshScroll via buildTagRow->nothing; call explicitly:
+		end)
+	end
+
+	TagRow.CanvasSize = UDim2.new(0, TagRowList.AbsoluteContentSize.X + 10, 0, 0)
+	-- Trigger refresh after rebuild
+	task.defer(function() refreshScroll() end)
+end
+
+-- ==================== SEARCH + SAVE ROW ====================
 local SearchBox = Instance.new("TextBox")
 SearchBox.Parent = MainFrame
-SearchBox.BackgroundColor3 = Color3.fromRGB(22, 24, 31)
-SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-SearchBox.PlaceholderColor3 = Color3.fromRGB(125, 130, 145)
-SearchBox.PlaceholderText = "Tìm vị trí..."
+SearchBox.BackgroundColor3 = C.white
+SearchBox.TextColor3 = C.textMain
+SearchBox.PlaceholderColor3 = C.textFaint
+SearchBox.PlaceholderText = "🔍  Tên vị trí / tìm kiếm..."
 SearchBox.Text = ""
 SearchBox.Font = Enum.Font.GothamSemibold
-SearchBox.TextSize = 12
+SearchBox.TextSize = 11
 SearchBox.ClearTextOnFocus = false
-SearchBox.Size = UDim2.new(0.58, 0, 0, 36)
-SearchBox.Position = UDim2.new(0.04, 0, 0, 66)
-makeCorner(SearchBox, 8)
-makeStroke(SearchBox, Color3.fromRGB(70, 75, 90), 1, 0.35)
+SearchBox.Size = UDim2.new(0.55, 0, 0, 36)
+SearchBox.Position = UDim2.new(0.04, 0, 0, 108)
+makeCorner(SearchBox, 10)
+makeStroke(SearchBox, C.stroke, 1.5, 0)
+makePadding(SearchBox, 0, 0, 10, 0)
+
+SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+	refreshScroll()
+end)
+
+local TagCycleBtn = Instance.new("TextButton")
+TagCycleBtn.Parent = MainFrame
+TagCycleBtn.BackgroundColor3 = C.pink2
+TagCycleBtn.Font = Enum.Font.GothamSemibold
+TagCycleBtn.TextSize = 9
+TagCycleBtn.Text = TAGS[currentTagIndex]
+TagCycleBtn.TextColor3 = C.accentDark
+TagCycleBtn.Size = UDim2.new(0, 80, 0, 36)
+TagCycleBtn.Position = UDim2.new(0.04 + 0.55 + 0.015, 0, 0, 108)
+makeCorner(TagCycleBtn, 10)
+makeStroke(TagCycleBtn, C.accentLight, 1, 0)
+
+TagCycleBtn.MouseButton1Click:Connect(function()
+	currentTagIndex = currentTagIndex % #TAGS + 1
+	TagCycleBtn.Text = TAGS[currentTagIndex]
+end)
 
 local SaveButton = Instance.new("TextButton")
 SaveButton.Parent = MainFrame
-SaveButton.BackgroundColor3 = Color3.fromRGB(0, 160, 110)
-SaveButton.Text = "LƯU VỊ TRÍ"
-SaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+SaveButton.BackgroundColor3 = C.accent
+SaveButton.Text = "✦ LƯU"
+SaveButton.TextColor3 = C.white
 SaveButton.Font = Enum.Font.GothamBold
 SaveButton.TextSize = 11
-SaveButton.Size = UDim2.new(0.28, 0, 0, 36)
-SaveButton.Position = UDim2.new(0.66, 0, 0, 66)
-makeCorner(SaveButton, 8)
+SaveButton.Size = UDim2.new(0.19, 0, 0, 36)
+SaveButton.Position = UDim2.new(0.77, 0, 0, 108)
+makeCorner(SaveButton, 10)
 
-local RefreshButton = Instance.new("TextButton")
-RefreshButton.Parent = MainFrame
-RefreshButton.BackgroundColor3 = Color3.fromRGB(34, 37, 48)
-RefreshButton.Text = "↻"
-RefreshButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-RefreshButton.Font = Enum.Font.GothamBold
-RefreshButton.TextSize = 16
-RefreshButton.Size = UDim2.new(0, 34, 0, 36)
-RefreshButton.Position = UDim2.new(0.96, -34, 0, 66)
-makeCorner(RefreshButton, 8)
+local SaveGrad = Instance.new("UIGradient")
+SaveGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, C.accentLight),
+	ColorSequenceKeypoint.new(1, C.accentDark),
+})
+SaveGrad.Rotation = 90
+SaveGrad.Parent = SaveButton
 
+-- ==================== DETAILS PANEL ====================
 local DetailsFrame = Instance.new("Frame")
 DetailsFrame.Parent = MainFrame
-DetailsFrame.BackgroundColor3 = Color3.fromRGB(18, 20, 27)
-DetailsFrame.Position = UDim2.new(0.04, 0, 0, 112)
-DetailsFrame.Size = UDim2.new(0.92, 0, 0, 92)
+DetailsFrame.BackgroundColor3 = C.white
+DetailsFrame.Position = UDim2.new(0.04, 0, 0, 154)
+DetailsFrame.Size = UDim2.new(0.92, 0, 0, 104)
 DetailsFrame.BorderSizePixel = 0
-makeCorner(DetailsFrame, 10)
-makeStroke(DetailsFrame, Color3.fromRGB(65, 70, 85), 1, 0.5)
+makeCorner(DetailsFrame, 12)
+makeStroke(DetailsFrame, C.stroke, 1.5, 0)
+
+local DfGrad = Instance.new("UIGradient")
+DfGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 248, 253)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
+})
+DfGrad.Rotation = 135
+DfGrad.Parent = DetailsFrame
+
+-- Left accent stripe
+local DStripe = Instance.new("Frame")
+DStripe.Parent = DetailsFrame
+DStripe.BackgroundColor3 = C.accent
+DStripe.BorderSizePixel = 0
+DStripe.Position = UDim2.new(0, 0, 0, 12)
+DStripe.Size = UDim2.new(0, 3, 0, 80)
+makeCorner(DStripe, 4)
 
 local DetailsTitle = Instance.new("TextLabel")
 DetailsTitle.Parent = DetailsFrame
 DetailsTitle.BackgroundTransparency = 1
-DetailsTitle.Position = UDim2.new(0.04, 0, 0.06, 0)
-DetailsTitle.Size = UDim2.new(0.6, 0, 0, 18)
+DetailsTitle.Position = UDim2.new(0, 18, 0, 8)
+DetailsTitle.Size = UDim2.new(0.5, 0, 0, 18)
 DetailsTitle.Font = Enum.Font.GothamBold
-DetailsTitle.Text = "CHI TIẾT"
-DetailsTitle.TextColor3 = Color3.fromRGB(235, 238, 245)
-DetailsTitle.TextSize = 12
+DetailsTitle.Text = "CHI TIẾT VỊ TRÍ"
+DetailsTitle.TextColor3 = C.accent
+DetailsTitle.TextSize = 11
 DetailsTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local DetailsTagBadge = Instance.new("TextLabel")
+DetailsTagBadge.Parent = DetailsFrame
+DetailsTagBadge.BackgroundColor3 = C.pink2
+DetailsTagBadge.Position = UDim2.new(1, -120, 0, 10)
+DetailsTagBadge.Size = UDim2.new(0, 110, 0, 16)
+DetailsTagBadge.Font = Enum.Font.GothamSemibold
+DetailsTagBadge.Text = ""
+DetailsTagBadge.TextColor3 = C.accentDark
+DetailsTagBadge.TextSize = 9
+makeCorner(DetailsTagBadge, 8)
+makePadding(DetailsTagBadge, 0, 0, 6, 6)
 
 local DetailsName = Instance.new("TextLabel")
 DetailsName.Parent = DetailsFrame
 DetailsName.BackgroundTransparency = 1
-DetailsName.Position = UDim2.new(0.04, 0, 0.30, 0)
-DetailsName.Size = UDim2.new(0.92, 0, 0, 18)
+DetailsName.Position = UDim2.new(0, 18, 0, 30)
+DetailsName.Size = UDim2.new(0.88, 0, 0, 20)
 DetailsName.Font = Enum.Font.GothamSemibold
 DetailsName.Text = "Chưa chọn vị trí nào."
-DetailsName.TextColor3 = Color3.fromRGB(190, 195, 208)
-DetailsName.TextSize = 11
+DetailsName.TextColor3 = C.textMain
+DetailsName.TextSize = 12
 DetailsName.TextXAlignment = Enum.TextXAlignment.Left
 
 local DetailsPos = Instance.new("TextLabel")
 DetailsPos.Parent = DetailsFrame
 DetailsPos.BackgroundTransparency = 1
-DetailsPos.Position = UDim2.new(0.04, 0, 0.55, 0)
-DetailsPos.Size = UDim2.new(0.92, 0, 0, 18)
-DetailsPos.Font = Enum.Font.Gotham
-DetailsPos.Text = "X: 0.0   Y: 0.0   Z: 0.0"
-DetailsPos.TextColor3 = Color3.fromRGB(170, 175, 190)
+DetailsPos.Position = UDim2.new(0, 18, 0, 52)
+DetailsPos.Size = UDim2.new(0.88, 0, 0, 16)
+DetailsPos.Font = Enum.Font.Code
+DetailsPos.Text = "X: —   Y: —   Z: —"
+DetailsPos.TextColor3 = C.textSub
 DetailsPos.TextSize = 10
 DetailsPos.TextXAlignment = Enum.TextXAlignment.Left
 
 local DetailsMeta = Instance.new("TextLabel")
 DetailsMeta.Parent = DetailsFrame
 DetailsMeta.BackgroundTransparency = 1
-DetailsMeta.Position = UDim2.new(0.04, 0, 0.78, 0)
-DetailsMeta.Size = UDim2.new(0.92, 0, 0, 16)
+DetailsMeta.Position = UDim2.new(0, 18, 0, 70)
+DetailsMeta.Size = UDim2.new(0.88, 0, 0, 16)
 DetailsMeta.Font = Enum.Font.Gotham
-DetailsMeta.Text = "Favorited: No"
-DetailsMeta.TextColor3 = Color3.fromRGB(170, 175, 190)
-DetailsMeta.TextSize = 10
+DetailsMeta.Text = "Yêu thích: Không  •  Teleport: 0 lần"
+DetailsMeta.TextColor3 = C.textFaint
+DetailsMeta.TextSize = 9
 DetailsMeta.TextXAlignment = Enum.TextXAlignment.Left
 
+local DetailsMeta2 = Instance.new("TextLabel")
+DetailsMeta2.Parent = DetailsFrame
+DetailsMeta2.BackgroundTransparency = 1
+DetailsMeta2.Position = UDim2.new(0, 18, 0, 84)
+DetailsMeta2.Size = UDim2.new(0.88, 0, 0, 14)
+DetailsMeta2.Font = Enum.Font.Gotham
+DetailsMeta2.Text = ""
+DetailsMeta2.TextColor3 = C.textFaint
+DetailsMeta2.TextSize = 9
+DetailsMeta2.TextXAlignment = Enum.TextXAlignment.Left
+
+-- ==================== SCROLL LIST ====================
 local Scroll = Instance.new("ScrollingFrame")
 Scroll.Parent = MainFrame
 Scroll.BackgroundTransparency = 1
 Scroll.BorderSizePixel = 0
-Scroll.Position = UDim2.new(0.04, 0, 0, 214)
-Scroll.Size = UDim2.new(0.92, 0, 0, 250)
+Scroll.Position = UDim2.new(0.04, 0, 0, 268)
+Scroll.Size = UDim2.new(0.92, 0, 0, 268)
 Scroll.ScrollBarThickness = 4
-Scroll.ScrollBarImageColor3 = Color3.fromRGB(0, 180, 255)
+Scroll.ScrollBarImageColor3 = C.scrollBar
 Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 
 local UIList = Instance.new("UIListLayout")
@@ -350,52 +686,73 @@ UIList.Padding = UDim.new(0, 8)
 UIList.SortOrder = Enum.SortOrder.LayoutOrder
 
 UIList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-	Scroll.CanvasSize = UDim2.new(0, 0, 0, UIList.AbsoluteContentSize.Y + 10)
+	Scroll.CanvasSize = UDim2.new(0, 0, 0, UIList.AbsoluteContentSize.Y + 12)
 end)
 
 local EmptyLabel = Instance.new("TextLabel")
 EmptyLabel.Parent = Scroll
 EmptyLabel.BackgroundTransparency = 1
-EmptyLabel.Size = UDim2.new(1, 0, 0, 50)
-EmptyLabel.Position = UDim2.new(0, 0, 0, 90)
-EmptyLabel.Font = Enum.Font.Gotham
-EmptyLabel.Text = "Không có vị trí nào."
-EmptyLabel.TextColor3 = Color3.fromRGB(145, 150, 165)
+EmptyLabel.Size = UDim2.new(1, 0, 0, 60)
+EmptyLabel.Font = Enum.Font.GothamSemibold
+EmptyLabel.Text = "🌸  Chưa có vị trí nào được lưu."
+EmptyLabel.TextColor3 = C.textFaint
 EmptyLabel.TextSize = 12
+EmptyLabel.Visible = true
 
-local Status = Instance.new("TextLabel")
-Status.Parent = MainFrame
-Status.BackgroundTransparency = 1
-Status.Position = UDim2.new(0.04, 0, 0.94, 0)
-Status.Size = UDim2.new(0.92, 0, 0, 18)
-Status.Font = Enum.Font.Gotham
-Status.Text = "Sẵn sàng."
-Status.TextColor3 = Color3.fromRGB(160, 165, 180)
-Status.TextSize = 11
-Status.TextXAlignment = Enum.TextXAlignment.Left
+-- ==================== STATUS TOAST ====================
+local ToastFrame = Instance.new("Frame")
+ToastFrame.Parent = MainFrame
+ToastFrame.BackgroundColor3 = C.white
+ToastFrame.BorderSizePixel = 0
+ToastFrame.Position = UDim2.new(0.04, 0, 0.92, 0)
+ToastFrame.Size = UDim2.new(0.92, 0, 0, 28)
+ToastFrame.BackgroundTransparency = 0.05
+makeCorner(ToastFrame, 8)
+makeStroke(ToastFrame, C.stroke, 1, 0.3)
 
-local GlowBar = Instance.new("Frame")
-GlowBar.Parent = MainFrame
-GlowBar.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-GlowBar.BorderSizePixel = 0
-GlowBar.Position = UDim2.new(0.04, 0, 0.11, 0)
-GlowBar.Size = UDim2.new(0.18, 0, 0, 2)
-makeCorner(GlowBar, 4)
+local ToastDot = Instance.new("Frame")
+ToastDot.Parent = ToastFrame
+ToastDot.BackgroundColor3 = C.accent
+ToastDot.BorderSizePixel = 0
+ToastDot.Position = UDim2.new(0, 10, 0.5, -4)
+ToastDot.Size = UDim2.new(0, 8, 0, 8)
+makeCorner(ToastDot, 4)
 
-tween(GlowBar, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-	BackgroundColor3 = Color3.fromRGB(180, 120, 255)
-})
+local ToastLabel = Instance.new("TextLabel")
+ToastLabel.Parent = ToastFrame
+ToastLabel.BackgroundTransparency = 1
+ToastLabel.Position = UDim2.new(0, 26, 0, 0)
+ToastLabel.Size = UDim2.new(0.88, 0, 1, 0)
+ToastLabel.Font = Enum.Font.GothamSemibold
+ToastLabel.Text = "Sẵn sàng 🌸"
+ToastLabel.TextColor3 = C.textSub
+ToastLabel.TextSize = 10
+ToastLabel.TextXAlignment = Enum.TextXAlignment.Left
 
--- ==================== LOGIC ====================
-local function updateCount()
-	CountLabel.Text = tostring(#savedPositions) .. " vị trí đã lưu"
+local toastConn
+local function showToast(msg, color, dotColor)
+	if toastConn then toastConn:Disconnect() end
+	ToastLabel.Text = msg
+	ToastLabel.TextColor3 = color or C.textSub
+	ToastDot.BackgroundColor3 = dotColor or C.accent
+	tween(ToastFrame, TQ, {BackgroundTransparency = 0})
+
+	toastConn = task.delay(3, function()
+		tween(ToastFrame, TweenInfo.new(0.5), {BackgroundTransparency = 0.05})
+		ToastLabel.TextColor3 = C.textSub
+		ToastDot.BackgroundColor3 = C.accent
+		ToastLabel.Text = "Sẵn sàng 🌸"
+	end)
 end
 
-local function getSelectedEntry()
+-- ==================== LOGIC ====================
+local function updateStatPill()
+	StatLabel.Text = tostring(#savedPositions) .. " lưu  •  " .. tostring(totalTeleports) .. " tp"
+end
+
+local function getEntry(id)
 	for _, v in ipairs(savedPositions) do
-		if v.Id == selectedId then
-			return v
-		end
+		if v.Id == id then return v end
 	end
 	return nil
 end
@@ -403,40 +760,67 @@ end
 local function updateDetails(entry)
 	if not entry then
 		DetailsName.Text = "Chưa chọn vị trí nào."
-		DetailsPos.Text = "X: 0.0   Y: 0.0   Z: 0.0"
-		DetailsMeta.Text = "Favorited: No"
+		DetailsPos.Text = "X: —   Y: —   Z: —"
+		DetailsMeta.Text = "Yêu thích: Không  •  Teleport: 0 lần"
+		DetailsMeta2.Text = ""
+		DetailsTagBadge.Text = ""
+		DetailsTagBadge.BackgroundTransparency = 1
+		DStripe.BackgroundColor3 = C.accentLight
 		return
 	end
-
-	DetailsName.Text = entry.Name
+	DetailsName.Text = (entry.Favorited and "★  " or "") .. entry.Name
 	DetailsPos.Text = formatPos(entry.CFrame)
-	DetailsMeta.Text = "Favorited: " .. (entry.Favorited and "Yes" or "No") .. "   |   Saved: " .. os.date("%H:%M:%S - %d/%m/%Y", entry.CreatedAt or os.time())
+	DetailsMeta.Text = "Yêu thích: " .. (entry.Favorited and "Có ★" or "Không") .. "  •  Teleport: " .. tostring(entry.TpCount or 0) .. " lần"
+	DetailsMeta2.Text = "Lưu lúc: " .. fmtTime(entry.CreatedAt)
+	DetailsTagBadge.Text = entry.Tag or ""
+	DetailsTagBadge.BackgroundTransparency = entry.Tag and 0 or 1
+
+	if entry.Tag and TAG_COLORS[entry.Tag] then
+		DetailsTagBadge.BackgroundColor3 = TAG_COLORS[entry.Tag]
+		DStripe.BackgroundColor3 = TAG_COLORS[entry.Tag]
+	else
+		DStripe.BackgroundColor3 = C.accent
+	end
 end
 
 local function passesFilter(entry)
 	local q = string.lower(SearchBox.Text or "")
-	if q == "" then
-		return true
-	end
-	return string.find(string.lower(entry.Name or ""), q, 1, true) ~= nil
+	local nameMatch = q == "" or string.find(string.lower(entry.Name or ""), q, 1, true) ~= nil
+	local tagMatch  = selectedTagFilter == nil or entry.Tag == selectedTagFilter
+	return nameMatch and tagMatch
 end
 
 local function sortEntries()
 	table.sort(savedPositions, function(a, b)
-		if a.Favorited ~= b.Favorited then
-			return a.Favorited and not b.Favorited
-		end
+		if a.Favorited ~= b.Favorited then return a.Favorited and not b.Favorited end
 		return (a.CreatedAt or 0) > (b.CreatedAt or 0)
 	end)
 end
 
-local function refreshScroll()
+-- Ripple effect on button
+local function ripple(btn, col)
+	local r = Instance.new("Frame")
+	r.Parent = btn
+	r.BackgroundColor3 = col or C.white
+	r.BackgroundTransparency = 0.5
+	r.Size = UDim2.new(0, 0, 0, 0)
+	r.Position = UDim2.new(0.5, 0, 0.5, 0)
+	r.AnchorPoint = Vector2.new(0.5, 0.5)
+	r.BorderSizePixel = 0
+	r.ZIndex = 10
+	makeCorner(r, 100)
+	tween(r, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = UDim2.new(1.5, 0, 4, 0),
+		BackgroundTransparency = 1
+	})
+	task.delay(0.36, function() r:Destroy() end)
+end
+
+function refreshScroll()
 	sortEntries()
 
-	for _, child in ipairs(Scroll:GetChildren()) do
-		if child:IsA("Frame") then
-			child:Destroy()
-		end
+	for _, c in ipairs(Scroll:GetChildren()) do
+		if c:IsA("Frame") then c:Destroy() end
 	end
 
 	local anyVisible = false
@@ -444,118 +828,178 @@ local function refreshScroll()
 	for _, data in ipairs(savedPositions) do
 		if passesFilter(data) then
 			anyVisible = true
+			local isSel = data.Id == selectedId
+			local tagCol = data.Tag and TAG_COLORS[data.Tag] or C.accentLight
 
 			local Card = Instance.new("Frame")
 			Card.Parent = Scroll
-			Card.BackgroundColor3 = (data.Id == selectedId) and Color3.fromRGB(28, 31, 42) or Color3.fromRGB(21, 23, 31)
-			Card.Size = UDim2.new(1, 0, 0, 62)
+			Card.BackgroundColor3 = isSel and Color3.fromRGB(255, 243, 250) or C.white
+			Card.Size = UDim2.new(1, 0, 0, 68)
 			Card.BorderSizePixel = 0
-			makeCorner(Card, 10)
-			makeStroke(Card, (data.Id == selectedId) and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(65, 70, 85), 1, 0.45)
+			makeCorner(Card, 12)
+			makeStroke(Card, isSel and C.strokeSel or C.stroke, isSel and 2 or 1, isSel and 0 or 0.2)
+
+			if isSel then
+				local CardGrad = Instance.new("UIGradient")
+				CardGrad.Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 240, 250)),
+					ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 248, 255)),
+				})
+				CardGrad.Rotation = 135
+				CardGrad.Parent = Card
+			end
+
+			-- Tag stripe left
+			local CardStripe = Instance.new("Frame")
+			CardStripe.Parent = Card
+			CardStripe.BackgroundColor3 = tagCol
+			CardStripe.BorderSizePixel = 0
+			CardStripe.Position = UDim2.new(0, 0, 0, 10)
+			CardStripe.Size = UDim2.new(0, 3, 0, 48)
+			makeCorner(CardStripe, 4)
 
 			local NameLabel = Instance.new("TextLabel")
 			NameLabel.Parent = Card
 			NameLabel.BackgroundTransparency = 1
-			NameLabel.Position = UDim2.new(0.04, 0, 0.05, 0)
-			NameLabel.Size = UDim2.new(0.62, 0, 0.42, 0)
+			NameLabel.Position = UDim2.new(0, 14, 0, 8)
+			NameLabel.Size = UDim2.new(0.55, 0, 0, 20)
 			NameLabel.Font = Enum.Font.GothamSemibold
 			NameLabel.Text = (data.Favorited and "★ " or "") .. data.Name
-			NameLabel.TextColor3 = Color3.fromRGB(240, 242, 245)
+			NameLabel.TextColor3 = isSel and C.accent or C.textMain
 			NameLabel.TextSize = 12
 			NameLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+			-- Tag badge
+			if data.Tag then
+				local TagBadge = Instance.new("TextLabel")
+				TagBadge.Parent = Card
+				TagBadge.BackgroundColor3 = tagCol
+				TagBadge.BackgroundTransparency = 0.65
+				TagBadge.Position = UDim2.new(0, 14, 0, 30)
+				TagBadge.Size = UDim2.new(0, 80, 0, 14)
+				TagBadge.Font = Enum.Font.GothamSemibold
+				TagBadge.Text = data.Tag
+				TagBadge.TextColor3 = C.accentDark
+				TagBadge.TextSize = 8
+				makeCorner(TagBadge, 7)
+				makePadding(TagBadge, 0, 0, 4, 4)
+			end
 
 			local PosLabel = Instance.new("TextLabel")
 			PosLabel.Parent = Card
 			PosLabel.BackgroundTransparency = 1
-			PosLabel.Position = UDim2.new(0.04, 0, 0.5, 0)
-			PosLabel.Size = UDim2.new(0.64, 0, 0.28, 0)
-			PosLabel.Font = Enum.Font.Gotham
+			PosLabel.Position = UDim2.new(0, 14, 0, 47)
+			PosLabel.Size = UDim2.new(0.6, 0, 0, 14)
+			PosLabel.Font = Enum.Font.Code
 			PosLabel.Text = formatPos(data.CFrame)
-			PosLabel.TextColor3 = Color3.fromRGB(145, 150, 165)
-			PosLabel.TextSize = 10
+			PosLabel.TextColor3 = C.textFaint
+			PosLabel.TextSize = 9
 			PosLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+			-- TP Count pill
+			local TpPill = Instance.new("TextLabel")
+			TpPill.Parent = Card
+			TpPill.BackgroundColor3 = C.bgDeep
+			TpPill.Position = UDim2.new(0.58, 0, 0, 8)
+			TpPill.Size = UDim2.new(0, 48, 0, 14)
+			TpPill.Font = Enum.Font.GothamSemibold
+			TpPill.Text = "tp: " .. tostring(data.TpCount or 0)
+			TpPill.TextColor3 = C.textSub
+			TpPill.TextSize = 8
+			makeCorner(TpPill, 7)
 
 			local SelectBtn = Instance.new("TextButton")
 			SelectBtn.Parent = Card
 			SelectBtn.BackgroundTransparency = 1
 			SelectBtn.Text = ""
 			SelectBtn.Size = UDim2.new(1, 0, 1, 0)
+			SelectBtn.ZIndex = 1
 
 			local TpBtn = Instance.new("TextButton")
 			TpBtn.Parent = Card
-			TpBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+			TpBtn.BackgroundColor3 = isSel and C.accent or Color3.fromRGB(245, 210, 230)
 			TpBtn.Text = "TELE"
-			TpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+			TpBtn.TextColor3 = isSel and C.white or C.accentDark
 			TpBtn.Font = Enum.Font.GothamBold
 			TpBtn.TextSize = 10
-			TpBtn.Size = UDim2.new(0, 52, 0, 30)
-			TpBtn.Position = UDim2.new(1, -118, 0.5, -15)
-			makeCorner(TpBtn, 8)
+			TpBtn.Size = UDim2.new(0, 52, 0, 28)
+			TpBtn.Position = UDim2.new(1, -128, 0.5, -14)
+			TpBtn.ZIndex = 2
+			makeCorner(TpBtn, 9)
 
 			local FavBtn = Instance.new("TextButton")
 			FavBtn.Parent = Card
-			FavBtn.BackgroundColor3 = data.Favorited and Color3.fromRGB(120, 95, 0) or Color3.fromRGB(38, 42, 54)
+			FavBtn.BackgroundColor3 = data.Favorited and Color3.fromRGB(255, 240, 180) or C.bgDeep
 			FavBtn.Text = data.Favorited and "★" or "☆"
-			FavBtn.TextColor3 = data.Favorited and Color3.fromRGB(255, 220, 80) or Color3.fromRGB(255, 255, 255)
+			FavBtn.TextColor3 = data.Favorited and Color3.fromRGB(200, 140, 0) or C.textFaint
 			FavBtn.Font = Enum.Font.GothamBold
-			FavBtn.TextSize = 14
-			FavBtn.Size = UDim2.new(0, 30, 0, 30)
-			FavBtn.Position = UDim2.new(1, -62, 0.5, -15)
-			makeCorner(FavBtn, 8)
+			FavBtn.TextSize = 16
+			FavBtn.Size = UDim2.new(0, 30, 0, 28)
+			FavBtn.Position = UDim2.new(1, -72, 0.5, -14)
+			FavBtn.ZIndex = 2
+			makeCorner(FavBtn, 9)
 
 			local DelBtn = Instance.new("TextButton")
 			DelBtn.Parent = Card
-			DelBtn.BackgroundColor3 = (pendingDeleteId == data.Id) and Color3.fromRGB(90, 28, 34) or Color3.fromRGB(46, 28, 34)
-			DelBtn.Text = (pendingDeleteId == data.Id) and "OK" or "X"
-			DelBtn.TextColor3 = Color3.fromRGB(255, 120, 120)
+			DelBtn.BackgroundColor3 = (pendingDeleteId == data.Id) and C.delConfirm or C.delBg
+			DelBtn.Text = (pendingDeleteId == data.Id) and "✓" or "✕"
+			DelBtn.TextColor3 = C.red
 			DelBtn.Font = Enum.Font.GothamBold
-			DelBtn.TextSize = 10
-			DelBtn.Size = UDim2.new(0, 28, 0, 30)
-			DelBtn.Position = UDim2.new(1, -28, 0.5, -15)
-			makeCorner(DelBtn, 8)
+			DelBtn.TextSize = 12
+			DelBtn.Size = UDim2.new(0, 30, 0, 28)
+			DelBtn.Position = UDim2.new(1, -36, 0.5, -14)
+			DelBtn.ZIndex = 2
+			makeCorner(DelBtn, 9)
 
 			SelectBtn.MouseButton1Click:Connect(function()
+				ripple(Card, C.accentLight)
 				selectedId = data.Id
 				updateDetails(data)
 				refreshScroll()
 			end)
 
 			TpBtn.MouseButton1Click:Connect(function()
+				ripple(TpBtn, C.white)
 				selectedId = data.Id
 				updateDetails(data)
 
 				local _, hrp = getCharacter()
 				if not hrp then
-					Status.Text = "Không tìm thấy HumanoidRootPart."
-					Status.TextColor3 = Color3.fromRGB(255, 80, 80)
+					showToast("❌  Không tìm thấy nhân vật!", C.red, C.red)
 					return
 				end
 
-				tween(hrp, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-					CFrame = data.CFrame
-				})
+				tween(hrp, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {CFrame = data.CFrame})
 
-				Status.Text = "Teleport đến: " .. data.Name
-				Status.TextColor3 = Color3.fromRGB(0, 255, 140)
+				data.TpCount = (data.TpCount or 0) + 1
+				totalTeleports = totalTeleports + 1
+				updateDetails(data)
+				updateStatPill()
+				refreshScroll()
+				showToast("🌸  Đã teleport: " .. data.Name, C.accent, C.accent)
 			end)
 
 			FavBtn.MouseButton1Click:Connect(function()
+				ripple(FavBtn, C.gold)
 				data.Favorited = not data.Favorited
 				selectedId = data.Id
 				updateDetails(data)
 				refreshScroll()
-				Status.Text = data.Favorited and "Đã ghim: " .. data.Name or "Đã bỏ ghim: " .. data.Name
-				Status.TextColor3 = Color3.fromRGB(255, 220, 80)
+				if data.Favorited then
+					showToast("★  Đã ghim yêu thích: " .. data.Name, Color3.fromRGB(200, 140, 0), C.gold)
+				else
+					showToast("☆  Đã bỏ ghim: " .. data.Name, C.textSub, C.textFaint)
+				end
 			end)
 
 			DelBtn.MouseButton1Click:Connect(function()
+				ripple(DelBtn, C.red)
 				if pendingDeleteId ~= data.Id then
 					pendingDeleteId = data.Id
-					Status.Text = "Bấm lại để xác nhận xóa: " .. data.Name
-					Status.TextColor3 = Color3.fromRGB(255, 200, 80)
+					showToast("⚠️  Bấm lại để xác nhận xóa: " .. data.Name, Color3.fromRGB(200, 100, 0), Color3.fromRGB(255, 180, 80))
 					refreshScroll()
 
-					task.delay(2, function()
+					task.delay(2.5, function()
 						if pendingDeleteId == data.Id then
 							pendingDeleteId = nil
 							refreshScroll()
@@ -577,120 +1021,111 @@ local function refreshScroll()
 				end
 
 				pendingDeleteId = nil
-				updateCount()
+				updateStatPill()
 				refreshScroll()
-				Status.Text = "Đã xóa: " .. data.Name
-				Status.TextColor3 = Color3.fromRGB(255, 100, 100)
+				showToast("🗑️  Đã xóa: " .. data.Name, C.red, C.red)
 			end)
 		end
 	end
 
 	EmptyLabel.Visible = not anyVisible
-	updateCount()
-	updateDetails(getSelectedEntry())
+	updateStatPill()
+	updateDetails(getEntry(selectedId))
 end
 
 local function saveCurrentPosition()
 	if saveDebounce then return end
 	saveDebounce = true
+	ripple(SaveButton, C.white)
 
 	local _, hrp = getCharacter()
 	if not hrp then
-		Status.Text = "Lỗi: chưa tìm thấy nhân vật."
-		Status.TextColor3 = Color3.fromRGB(255, 80, 80)
+		showToast("❌  Lỗi: không tìm thấy nhân vật.", C.red, C.red)
 		saveDebounce = false
 		return
 	end
 
-	local name = string.gsub(SearchBox.Text or "", "^%s+", "")
-	name = string.gsub(name, "%s+$", "")
+	local name = (SearchBox.Text or ""):match("^%s*(.-)%s*$")
 	if name == "" then
 		name = "Vị trí " .. tostring(#savedPositions + 1)
 	end
 
 	for _, v in ipairs(savedPositions) do
 		if v.Name == name then
-			Status.Text = "Tên đã tồn tại."
-			Status.TextColor3 = Color3.fromRGB(255, 200, 80)
+			showToast("⚠️  Tên đã tồn tại: " .. name, Color3.fromRGB(200, 120, 0), C.gold)
 			saveDebounce = false
 			return
 		end
 	end
 
+	local tag = TAGS[currentTagIndex]
 	local entry = {
-		Id = makeGuid(),
-		Name = name,
-		CFrame = hrp.CFrame,
+		Id        = makeGuid(),
+		Name      = name,
+		CFrame    = hrp.CFrame,
 		Favorited = false,
-		CreatedAt = os.time()
+		CreatedAt = os.time(),
+		TpCount   = 0,
+		Tag       = tag,
 	}
 
 	table.insert(savedPositions, entry)
 	selectedId = entry.Id
-
 	SearchBox.Text = ""
-	updateCount()
+
+	updateStatPill()
 	updateDetails(entry)
 	refreshScroll()
+	showToast("✦  Đã lưu: " .. name .. "  [" .. tag .. "]", C.accent, C.accent)
 
-	Status.Text = "Đã lưu: " .. name
-	Status.TextColor3 = Color3.fromRGB(0, 255, 140)
+	-- Flash save button
+	tween(SaveButton, TQ, {BackgroundColor3 = C.green})
+	task.delay(0.4, function()
+		tween(SaveButton, TQS, {BackgroundColor3 = C.accent})
+	end)
 
-	task.delay(0.2, function()
+	task.delay(0.25, function()
 		saveDebounce = false
 	end)
 end
 
 SaveButton.MouseButton1Click:Connect(saveCurrentPosition)
 
-RefreshButton.MouseButton1Click:Connect(function()
-	pendingDeleteId = nil
-	refreshScroll()
-	Status.Text = "Đã làm mới danh sách."
-	Status.TextColor3 = Color3.fromRGB(160, 165, 180)
-end)
-
-SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
-	refreshScroll()
-end)
-
 MinButton.MouseButton1Click:Connect(function()
 	minimized = not minimized
+	ripple(MinButton, C.accent)
 
 	if minimized then
-		tween(MainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = UDim2.new(0, 420, 0, 54)
+		tween(MainFrame, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+			Size = UDim2.new(0, 460, 0, 63)
 		})
-		SearchBox.Visible = false
-		SaveButton.Visible = false
-		RefreshButton.Visible = false
-		DetailsFrame.Visible = false
-		Scroll.Visible = false
-		Status.Visible = false
-		CountLabel.Visible = false
+		for _, v in ipairs({SearchBox, TagCycleBtn, SaveButton, TagRow, DetailsFrame, Scroll, ToastFrame, TbLine}) do
+			v.Visible = false
+		end
 	else
-		SearchBox.Visible = true
-		SaveButton.Visible = true
-		RefreshButton.Visible = true
-		DetailsFrame.Visible = true
-		Scroll.Visible = true
-		Status.Visible = true
-		CountLabel.Visible = true
-
-		tween(MainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = UDim2.new(0, 420, 0, 520)
+		for _, v in ipairs({SearchBox, TagCycleBtn, SaveButton, TagRow, DetailsFrame, Scroll, ToastFrame, TbLine}) do
+			v.Visible = true
+		end
+		tween(MainFrame, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Size = UDim2.new(0, 460, 0, 580)
 		})
 	end
 end)
 
 CloseButton.MouseButton1Click:Connect(function()
-	ScreenGui:Destroy()
+	ripple(CloseButton, C.red)
+	tween(MainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+		Size = UDim2.new(0, 460, 0, 0),
+		BackgroundTransparency = 1
+	})
+	task.delay(0.22, function()
+		ScreenGui:Destroy()
+	end)
 end)
 
 -- ==================== DRAG ====================
 local dragging = false
-local dragStart
-local startPos
+local dragStart, startPos
 
 Topbar.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -702,12 +1137,10 @@ end)
 
 UserInputService.InputChanged:Connect(function(input)
 	if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-		local delta = input.Position - dragStart
+		local d = input.Position - dragStart
 		MainFrame.Position = UDim2.new(
-			startPos.X.Scale,
-			startPos.X.Offset + delta.X,
-			startPos.Y.Scale,
-			startPos.Y.Offset + delta.Y
+			startPos.X.Scale, startPos.X.Offset + d.X,
+			startPos.Y.Scale, startPos.Y.Offset + d.Y
 		)
 	end
 end)
@@ -718,16 +1151,34 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
+-- ==================== HOVER EFFECTS ====================
+local function addHover(btn, normalColor, hoverColor)
+	btn.MouseEnter:Connect(function()
+		tween(btn, TQ, {BackgroundColor3 = hoverColor})
+	end)
+	btn.MouseLeave:Connect(function()
+		tween(btn, TQ, {BackgroundColor3 = normalColor})
+	end)
+end
+
+addHover(MinButton,   C.pink2,   C.accentLight)
+addHover(CloseButton, Color3.fromRGB(255, 225, 232), Color3.fromRGB(255, 190, 210))
+
+-- ==================== GLOW ANIMATION ====================
+tween(TopAccentBar, TSine, {BackgroundColor3 = Color3.fromRGB(200, 80, 180)})
+
 -- ==================== OPEN ANIMATION ====================
-MainFrame.Size = UDim2.new(0, 380, 0, 500)
-MainFrame.BackgroundTransparency = 0.08
-tween(MainFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-	Size = UDim2.new(0, 420, 0, 520),
+MainFrame.Size = UDim2.new(0, 440, 0, 560)
+MainFrame.BackgroundTransparency = 0.1
+tween(MainFrame, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+	Size = UDim2.new(0, 460, 0, 580),
 	BackgroundTransparency = 0
 })
 
-updateCount()
+-- ==================== INIT ====================
+buildTagRow()
+updateStatPill()
 updateDetails(nil)
 refreshScroll()
 
-print("Zenonix Save & Teleport V5 loaded.")
+print("✦ Zenonix Save & Teleport V6 — Sakura Edition loaded! ✦")
