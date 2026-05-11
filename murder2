@@ -1,58 +1,72 @@
--- [[ ZENONIX HUB PREMIUM LOADER ]] --
--- Owner: Yuki | Power: 9999
+-- [[ ZENONIX HUB PREMIUM LOADER v2.0 ]] --
+-- Developed by: Yuki.dev | Power: 9999
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 
--- 1. Tạo Giao Diện Tải (Loader UI)
+-- 1. Tránh Double-Load (Anti-Double Load)
+local success, coreGui = pcall(function() return game:GetService("CoreGui") end)
+local targetParent = success and coreGui or LocalPlayer:WaitForChild("PlayerGui")
+
+if targetParent:FindFirstChild("ZenonixLoader") then
+    targetParent.ZenonixLoader:Destroy()
+end
+
+-- 2. Khởi tạo Giao diện Loader
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "ZenonixLoader"
-local success, coreGui = pcall(function() return game:GetService("CoreGui") end)
-ScreenGui.Parent = success and coreGui or LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = targetParent
+
+-- Hàm tạo Corner chuẩn Local
+local function applyCorner(parent, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius or 8)
+    corner.Parent = parent
+    return corner
+end
 
 -- Hiệu ứng mờ màn hình phía sau (Blur)
 local Blur = Instance.new("BlurEffect")
 Blur.Size = 0
 Blur.Parent = Lighting
-TweenService:Create(Blur, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = 15}):Play()
+TweenService:Create(Blur, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = 12}):Play()
 
 -- Khung chính của Loader
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 360, 0, 180)
-MainFrame.Position = UDim2.new(0.5, -180, 0.5, -90)
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+MainFrame.Size = UDim2.new(0, 200, 0, 100) -- Bắt đầu nhỏ để làm hiệu ứng Elastic
+MainFrame.Position = UDim2.new(0.5, -100, 0.5, -50)
+MainFrame.BackgroundColor3 = Color3.fromRGB(11, 11, 14)
 MainFrame.BorderSizePixel = 0
-MainFrame.BackgroundTransparency = 1 -- Sẽ fade-in sau
+MainFrame.BackgroundTransparency = 1
 MainFrame.Parent = ScreenGui
+applyCorner(MainFrame, 12)
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 12)
-corner.Parent = MainFrame
+-- Viền phát sáng Neon có Gradient xoay
+local Stroke = Instance.new("UIStroke")
+Stroke.Color = Color3.fromRGB(58, 134, 255)
+Stroke.Thickness = 1.8
+Stroke.Transparency = 1
+Stroke.Parent = MainFrame
 
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(58, 134, 255) -- Màu xanh Neon đại diện cho Zenonix
-stroke.Thickness = 1.5
-stroke.Transparency = 1
-stroke.Parent = MainFrame
-
--- Thêm Gradient đổi màu cho viền thêm "đẹp"
 local UIGradient = Instance.new("UIGradient")
 UIGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(58, 134, 255)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 120))
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(58, 134, 255)), -- Neon Blue
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 0, 120)), -- Hot Pink
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(58, 134, 255))
 })
-UIGradient.Parent = stroke
+UIGradient.Parent = Stroke
 
 -- Tiêu đề chính (Zenonix Hub)
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 40)
-Title.Position = UDim2.new(0, 0, 0, 15)
+Title.Size = UDim2.new(1, 0, 0, 35)
+Title.Position = UDim2.new(0, 0, 0, 20)
 Title.BackgroundTransparency = 1
 Title.Text = "ZENONIX HUB"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextSize = 22
+Title.TextSize = 24
 Title.Font = Enum.Font.GothamBold
 Title.TextTransparency = 1
 Title.Parent = MainFrame
@@ -60,116 +74,164 @@ Title.Parent = MainFrame
 -- Tiêu đề phụ (Owner & Power Level)
 local SubTitle = Instance.new("TextLabel")
 SubTitle.Size = UDim2.new(1, 0, 0, 20)
-SubTitle.Position = UDim2.new(0, 0, 0, 50)
+SubTitle.Position = UDim2.new(0, 0, 0, 52)
 SubTitle.BackgroundTransparency = 1
 SubTitle.Text = "Power Level: 9999 | Owner: Yuki"
-SubTitle.TextColor3 = Color3.fromRGB(150, 150, 150)
-SubTitle.TextSize = 12
+SubTitle.TextColor3 = Color3.fromRGB(130, 130, 135)
+SubTitle.TextSize = 11
 SubTitle.Font = Enum.Font.GothamMedium
 SubTitle.TextTransparency = 1
 SubTitle.Parent = MainFrame
 
--- Thanh hiển thị tiến trình (Progress Bar Background)
+-- Thanh Progress Bar Background
 local BarBackground = Instance.new("Frame")
-BarBackground.Size = UDim2.new(0, 300, 0, 8)
-BarBackground.Position = UDim2.new(0.5, -150, 0.65, 0)
+BarBackground.Size = UDim2.new(0, 300, 0, 6)
+BarBackground.Position = UDim2.new(0.5, -150, 0.65, 5)
 BarBackground.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 BarBackground.BorderSizePixel = 0
 BarBackground.BackgroundTransparency = 1
 BarBackground.Parent = MainFrame
-addCorner = Instance.new("UICorner")
-addCorner.CornerRadius = UDim.new(0, 4)
-addCorner.Parent = BarBackground
+applyCorner(BarBackground, 4)
 
--- Thanh chạy thực tế (Progress Bar Fill)
+-- Thanh Progress Bar Fill
 local BarFill = Instance.new("Frame")
-BarFill.Size = UDim2.new(0, 0, 1, 0) -- Bắt đầu từ 0%
+BarFill.Size = UDim2.new(0, 0, 1, 0)
 BarFill.BackgroundColor3 = Color3.fromRGB(58, 134, 255)
 BarFill.BorderSizePixel = 0
 BarFill.Parent = BarBackground
-addCorner2 = Instance.new("UICorner")
-addCorner2.CornerRadius = UDim.new(0, 4)
-addCorner2.Parent = BarFill
+applyCorner(BarFill, 4)
 
 local BarGradient = UIGradient:Clone()
 BarGradient.Parent = BarFill
 
--- Trạng thái tải (Loading Status Text)
+-- Bộ đếm phần trăm (%)
+local PercentLabel = Instance.new("TextLabel")
+PercentLabel.Size = UDim2.new(0, 50, 0, 20)
+PercentLabel.Position = UDim2.new(0.5, -25, 0.65, 12)
+PercentLabel.BackgroundTransparency = 1
+PercentLabel.Text = "0%"
+PercentLabel.TextColor3 = Color3.fromRGB(255, 0, 120)
+PercentLabel.TextSize = 13
+PercentLabel.Font = Enum.Font.GothamBold
+PercentLabel.TextTransparency = 1
+PercentLabel.Parent = MainFrame
+
+-- Trạng thái tải (Status Text)
 local StatusLabel = Instance.new("TextLabel")
 StatusLabel.Size = UDim2.new(1, 0, 0, 20)
-StatusLabel.Position = UDim2.new(0, 0, 0.78, 5)
+StatusLabel.Position = UDim2.new(0, 0, 0.82, 10)
 StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text = "Đang kết nối..."
-StatusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+StatusLabel.Text = "Khởi chạy hệ thống..."
+StatusLabel.TextColor3 = Color3.fromRGB(160, 160, 165)
 StatusLabel.TextSize = 11
 StatusLabel.Font = Enum.Font.Gotham
 StatusLabel.TextTransparency = 1
 StatusLabel.Parent = MainFrame
 
 -- ==========================================
--- 2. HIỆU ỨNG XUẤT HIỆN (FADE IN TWEEN)
+-- 3. ANIMATION XOAY VIỀN NEON (ROTATING BORDER)
 -- ==========================================
+task.spawn(function()
+    local rot = 0
+    while ScreenGui and ScreenGui.Parent do
+        rot = (rot + 2.5) % 360
+        UIGradient.Rotation = rot
+        pcall(function() BarGradient.Rotation = rot end)
+        task.wait(0.01)
+    end
+end)
 
-TweenService:Create(MainFrame, TweenInfo.new(0.5), {BackgroundTransparency = 0.05}):Play()
-TweenService:Create(stroke, TweenInfo.new(0.5), {Transparency = 0}):Play()
+-- ==========================================
+-- 4. HIỆU ỨNG BOUNCE XUẤT HIỆN (ELASTIC INTRO)
+-- ==========================================
+TweenService:Create(MainFrame, TweenInfo.new(0.7, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+    Size = UDim2.new(0, 380, 0, 210),
+    Position = UDim2.new(0.5, -190, 0.5, -105),
+    BackgroundTransparency = 0.05
+}):Play()
+
+TweenService:Create(Stroke, TweenInfo.new(0.5), {Transparency = 0}):Play()
 TweenService:Create(Title, TweenInfo.new(0.5), {TextTransparency = 0}):Play()
 TweenService:Create(SubTitle, TweenInfo.new(0.5), {TextTransparency = 0}):Play()
 TweenService:Create(StatusLabel, TweenInfo.new(0.5), {TextTransparency = 0}):Play()
+TweenService:Create(PercentLabel, TweenInfo.new(0.5), {TextTransparency = 0}):Play()
 TweenService:Create(BarBackground, TweenInfo.new(0.5), {BackgroundTransparency = 0}):Play()
-task.wait(0.6)
+task.wait(0.7)
 
 -- ==========================================
--- 3. CHẠY TIẾN TRÌNH GIẢ LẬP (SMOOTH PROGRESS)
+-- 5. CHẠY PHẦN TRĂM MƯỢT MÀ (DYNAMIC STEPS)
 -- ==========================================
+local currentPercent = 0
 
-local steps = {
-    {status = "Checking Whitelist...", progress = 0.15, duration = 0.4},
-    {status = "Verifying Yuki's Power (9999/9999)...", progress = 0.40, duration = 0.6},
-    {status = "Bypassing MM2 Security Layers...", progress = 0.65, duration = 0.8},
-    {status = "Fetching mm2.lua from GitHub...", progress = 0.85, duration = 0.5},
-    {status = "Loading Zenonix Modules...", progress = 1.00, duration = 0.4}
-}
-
-for _, step in ipairs(steps) do
-    StatusLabel.Text = step.status
-    local tween = TweenService:Create(BarFill, TweenInfo.new(step.duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-        Size = UDim2.new(step.progress, 0, 1, 0)
-    })
-    tween:Play()
-    tween.Completed:Wait()
-    task.wait(0.1)
+local function runLoadingStep(targetPercent, statusText, duration)
+    StatusLabel.Text = statusText
+    local steps = 25
+    local increment = (targetPercent - currentPercent) / steps
+    local stepDelay = duration / steps
+    
+    for i = 1, steps do
+        currentPercent = currentPercent + increment
+        local displayPercent = math.clamp(math.round(currentPercent), 0, 100)
+        
+        BarFill.Size = UDim2.new(displayPercent / 100, 0, 1, 0)
+        PercentLabel.Text = tostring(displayPercent) .. "%"
+        
+        -- Chuyển dần màu chữ theo tiến trình
+        PercentLabel.TextColor3 = Color3.fromRGB(58, 134, 255):Lerp(Color3.fromRGB(100, 255, 100), displayPercent / 100)
+        
+        task.wait(stepDelay)
+    end
 end
 
-StatusLabel.Text = "Zenonix Hub Loaded Successfully!"
+-- Thực thi tiến trình
+runLoadingStep(18, "Checking License Key...", 0.4)
+runLoadingStep(45, "Verifying Yuki's Power (9999)...", 0.6)
+runLoadingStep(72, "Bypassing MM2 Security Layers...", 0.8)
+runLoadingStep(90, "Connecting to Github Source...", 0.5)
+runLoadingStep(100, "Zenonix Loaded Successfully!", 0.4)
+
 StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+PercentLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+
+-- Tạo âm thanh bíp nhẹ báo hiệu thành công
+local successSound = Instance.new("Sound")
+successSound.SoundId = "rbxassetid://4590662762"
+successSound.Volume = 0.45
+successSound.Parent = MainFrame
+pcall(function() successSound:Play() end)
+
 task.wait(0.8)
 
 -- ==========================================
--- 4. HIỆU ỨNG BIẾN MẤT (FADE OUT TWEEN)
+-- 6. HIỆU ỨNG THU NHỎ BIẾN MẤT (OUTRO TWEEN)
 -- ==========================================
-
 TweenService:Create(Blur, TweenInfo.new(0.4), {Size = 0}):Play()
-TweenService:Create(MainFrame, TweenInfo.new(0.4), {BackgroundTransparency = 1, Size = UDim2.new(0, 300, 0, 150), Position = UDim2.new(0.5, -150, 0.5, -75)}):Play()
-TweenService:Create(stroke, TweenInfo.new(0.4), {Transparency = 1}):Play()
-TweenService:Create(Title, TweenInfo.new(0.4), {TextTransparency = 1}):Play()
-TweenService:Create(SubTitle, TweenInfo.new(0.4), {TextTransparency = 1}):Play()
-TweenService:Create(StatusLabel, TweenInfo.new(0.4), {TextTransparency = 1}):Play()
-TweenService:Create(BarBackground, TweenInfo.new(0.4), {BackgroundTransparency = 1}):Play()
-TweenService:Create(BarFill, TweenInfo.new(0.4), {BackgroundTransparency = 1}):Play()
-task.wait(0.5)
+TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+    Size = UDim2.new(0, 150, 0, 80),
+    Position = UDim2.new(0.5, -75, 0.5, -40),
+    BackgroundTransparency = 1
+}):Play()
 
--- Dọn dẹp Loader UI
+TweenService:Create(Stroke, TweenInfo.new(0.3), {Transparency = 1}):Play()
+TweenService:Create(Title, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
+TweenService:Create(SubTitle, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
+TweenService:Create(StatusLabel, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
+TweenService:Create(PercentLabel, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
+TweenService:Create(BarBackground, TweenInfo.new(0.3), {BackgroundTransparency = 1}):Play()
+TweenService:Create(BarFill, TweenInfo.new(0.3), {BackgroundTransparency = 1}):Play()
+task.wait(0.4)
+
+-- Dọn dẹp hoàn toàn Loader
 ScreenGui:Destroy()
 Blur:Destroy()
 
 -- ==========================================
--- 5. CHẠY SCRIPT CHÍNH CỦA YUKI
+-- 7. KHỞI CHẠY KHUNG TOOL CHÍNH
 -- ==========================================
-
 local successRun, err = pcall(function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/imz-yuki/zenonixhub/refs/heads/main/mm2.lua"))()
 end)
 
 if not successRun then
-    warn("Lỗi khi chạy Zenonix Hub: " .. tostring(err))
+    warn("Lỗi khi nạp Zenonix Hub VIP: " .. tostring(err))
 end
