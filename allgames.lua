@@ -1,120 +1,160 @@
 --[[
     ╔═══════════════════════════════════════════════════════════════════════════╗
-    ║      ⌬  ZENONIX GOD MODE V4.0 // OMNIVERSE ULTIMATE PERFORMANCE SYSTEM    ║
+    ║      ⌬  ZENONIX PURE AIMLOCK V5.0 // OMNIVERSE PURE CORE ENGINE           ║
     ║      >> CORE DEVELOPER: MINH MEO OMNIVERSE ETERNAL                        ║
-    ║      >> ARCHITECTURE: CROSS-PLATFORM ALL-GAMES ENGINE                     ║
-    ║      >> SPECIALIZATION: PROXIMITY AIMLOCK & ADVANCED LAG REDUCER          ║
+    ║      >> ARCHITECTURE: PURE TARGET LOCKING & MATHEMATICAL PREDICTION       ║
+    ║      >> FOCUS: ABSOLUTE PROXIMITY (NGƯỜI GẦN NHẤT) & SMOOTH INTERPOLATION ║
     ╚═══════════════════════════════════════════════════════════════════════════╝
 ]]--
 
--- ==================== [ HỆ THỐNG DỊCH VỤ CỐT LÕI ] ====================
+-- ==================== [ THIẾT LẬP HỆ THỐNG DỊCH VỤ ] ====================
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local Lighting = game:GetService("Lighting")
+local HttpService = game:GetService("HttpService")
+local GuiService = game:GetService("GuiService")
 local CoreGui = game:GetService("CoreGui")
-local Debris = game:GetService("Debris")
 
--- Đảm bảo Camera luôn được cập nhật chính xác khi hồi sinh nhân vật
+-- Đảm bảo Camera luôn đồng bộ hóa liên tục khi hồi sinh
 workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
     Camera = workspace.CurrentCamera
 end)
 
--- ==================== [ BẢNG CẤU HÌNH BIẾN TOÀN CỤC ] ====================
+-- ==================== [ BẢNG CẤU HÌNH TỐI CAO CHUYÊN BIỆT AIMLOCK ] ====================
 local Settings = {
-    -- Siêu Combat RAGE
-    Aimlock = false,
-    AimType = "Khoảng Cách Thực (Gần Nhất)", -- Khoảng Cách Thực / Tâm Chuột
-    TargetPart = "HumanoidRootPart",
-    Prediction = 0.14,
-    Smoothing = 0.08,
-    ShowFOV = false,
-    FOVRadius = 150,
+    -- Trạng thái cốt lõi
+    Enabled = true,
+    AimType = "Khoảng Cách Thực (Gần Nhất)", -- "Khoảng Cách Thực (Gần Nhất)" hoặc "Tâm Màn Hình"
+    TargetPartMode = "Tự Động (Closest Joint)", -- "Head", "HumanoidRootPart", "UpperTorso", "Tự Động (Closest Joint)"
+    DefaultPart = "HumanoidRootPart",
+    
+    -- Bộ lọc điều kiện khóa
     TeamCheck = false,
-    WallCheck = false,
+    WallCheck = true,
+    AliveCheck = true,
+    KnockedCheck = true, -- Bỏ qua kẻ địch bị gục (Dành cho các game có cơ chế knock)
     
-    -- Tiện ích Hitbox & Aura
-    Hitbox = false,
-    HitboxSize = 15,
-    HitboxPart = "HumanoidRootPart",
-    HitboxTrans = 0.6,
-    KillAura = false,
-    AuraRange = 25,
-    AutoAttack = false,
+    -- Siêu toán học & Nội suy
+    PredictionMode = "Gia Tốc Nâng Cao", -- "Tuyến Tính Basic", "Gia Tốc Nâng Cao", "Bù Trừ Ping"
+    PredictionAmount = 0.134,
+    SmoothingMode = "Bezier Curve Interpolation", -- "Tuyến Tính", "Bezier Curve Interpolation", "Exponential"
+    Smoothness = 0.065,
+    WeightX = 1.0,
+    WeightY = 1.0,
     
-    -- Siêu Thấu Thị (Visual ESP)
-    ESP_Boxes = false,
-    ESP_Tracers = false,
-    ESP_Names = false,
-    ESP_Distance = false,
-    BoxColor = Color3.fromRGB(255, 0, 128),
-    TracerColor = Color3.fromRGB(0, 255, 255),
-    TextColor = Color3.fromRGB(255, 255, 255),
+    -- Vòng tròn giới hạn quét FOV (Drawing API)
+    ShowFOV = true,
+    FOVRadius = 180,
+    FOVSides = 64,
+    FOVThickness = 2,
+    FOVColor = Color3.fromRGB(0, 255, 255),
+    FOVTransparency = 0.8,
+    RainbowFOV = true,
     
-    -- Mod Nhân Vật (Movement Tech)
-    SpeedHack = false,
-    SpeedValue = 100,
-    JumpHack = false,
-    JumpValue = 50,
-    InfJump = false,
-    Noclip = false,
-    Spinbot = false,
-    SpinSpeed = 60,
-    FlyHack = false,
-    FlySpeed = 50,
+    -- Tính năng phụ trợ bổ trợ ngắm bắn
+    TriggerBot = false,
+    TriggerDelay = 0.02,
+    AutoClickOnLock = false,
     
-    -- Thế Giới & Khử Lag Cực Hạn
-    FullBright = false,
-    NightMode = false,
-    AntiLag = false,
-    NoTextures = false,
-    
-    -- Cài đặt Hệ thống UI
+    -- Cấu hình Phím tắt & Giao diện
+    ToggleKey = Enum.KeyCode.Q, -- Phím kích hoạt nhấp giữ khóa (hoặc bật/tắt)
+    IsHoldMode = false, -- true: Giữ mới khóa / false: Bấm một phát để bật/tắt khóa
     MenuKey = Enum.KeyCode.RightControl
 }
 
--- Khởi tạo đối tượng đồ họa Drawing API
+-- Biến kiểm soát vòng đời thực thi
+local AimlockActive = false
+local CurrentTarget = nil
+local RainbowHue = 0
+
+-- Khởi tạo thực thể đồ họa Drawing
 local FOVCircle = Drawing.new("Circle")
-FOVCircle.Thickness = 1.5
+local TargetLine = Drawing.new("Line")
+
 FOVCircle.Filled = false
-FOVCircle.Transparency = 0.75
-FOVCircle.Color = Color3.fromRGB(191, 0, 255)
-FOVCircle.Visible = false
+TargetLine.Visible = false
 
-local Cache_ESP = {}
+-- ==================== [ MÔ-ĐUN QUẢN LÝ BỘ NHỚ VECTOR VÀ TOÁN HỌC ] ====================
+local MathEngine = {}
 
--- Hàm dọn sạch bộ nhớ Drawing tránh rò rỉ RAM (Memory Leak) trên thiết bị di động
-local function ClearPlayerDrawing(player)
-    if Cache_ESP[player] then
-        pcall(function()
-            if Cache_ESP[player].Box then Cache_ESP[player].Box:Remove() end
-            if Cache_ESP[player].Tracer then Cache_ESP[player].Tracer:Remove() end
-            if Cache_ESP[player].NameLabel then Cache_ESP[player].NameLabel:Remove() end
-            if Cache_ESP[player].DistLabel then Cache_ESP[player].DistLabel:Remove() end
-        end)
-        Cache_ESP[player] = nil
-    end
+function MathEngine.GetDistanceInStuds(pos1, pos2)
+    return (pos1 - pos2).Magnitude
 end
 
-Players.PlayerRemoving:Connect(ClearPlayerDrawing)
+function MathEngine.GetScreenDistance(pos1, pos2)
+    return (Vector2.new(pos1.X, pos1.Y) - Vector2.new(pos2.X, pos2.Y)).Magnitude
+end
 
--- ==================== [ MÔ-ĐUN KÉO THẢ GIAO DIỆN (DRAG ENGINE) ] ====================
-local function RegisterDragEngine(guiFrame)
+function MathEngine.ComputeBezier(t, p0, p1, p2)
+    local l1 = p0:Lerp(p1, t)
+    local l2 = p1:Lerp(p2, t)
+    return l1:Lerp(l2, t)
+end
+
+-- ==================== [ MÔ-ĐUN KIỂM TRA ĐIỀU KIỆN VẬT LÝ VÀ ĐỊA HÌNH ] ====================
+local PhysicsEngine = {}
+
+function PhysicsEngine.IsVisible(targetPart, character)
+    if not Settings.WallCheck then return true end
+    
+    local origin = Camera.CFrame.Position
+    local destination = targetPart.Position
+    local direction = destination - origin
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    
+    local ignoreList = {LocalPlayer.Character, Camera}
+    if character then
+        table.insert(ignoreList, character)
+    end
+    raycastParams.FilterDescendantsInstances = ignoreList
+    
+    local raycastResult = workspace:Raycast(origin, direction, raycastParams)
+    
+    if raycastResult then
+        return false
+    end
+    return true
+end
+
+function PhysicsEngine.CheckHealth(player)
+    local character = player.Character
+    if not character then return false end
+    
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+    
+    if Settings.AliveCheck and humanoid.Health <= 0 then
+        return false
+    end
+    
+    if Settings.KnockedCheck then
+        if character:FindFirstChild("KO") or character:FindFirstChild("Knocked") or humanoid:GetState() == Enum.HumanoidStateType.Dead then
+            return false
+        end
+    end
+    
+    return true
+end
+
+-- ==================== [ MÔ-ĐUN KÉO THẢ GIAO DIỆN KHÔNG LAG ] ====================
+local function ApplyDragEngine(frame)
     local dragging, dragInput, dragStart, startPos
-    guiFrame.InputBegan:Connect(function(input)
+    frame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
-            startPos = guiFrame.Position
+            startPos = frame.Position
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then dragging = false end
             end)
         end
     end)
-    guiFrame.InputChanged:Connect(function(input)
+    frame.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
@@ -122,587 +162,557 @@ local function RegisterDragEngine(guiFrame)
     RunService.Heartbeat:Connect(function()
         if dragging and dragInput then
             local delta = dragInput.Position - dragStart
-            guiFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
 end
 
--- ==================== [ KHỞI TẠO FRAMEWORK UI ĐẸP MẮT ] ====================
+-- ==================== [ KHỞI TẠO FRAMEWORK ĐỒ HỌA UI CAO CẤP ] ====================
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "Zenonix_Omniverse_V4"
+ScreenGui.Name = "Zenonix_Pure_Aimlock"
 ScreenGui.ResetOnSpawn = false
 pcall(function() ScreenGui.Parent = CoreGui or LocalPlayer:WaitForChild("PlayerGui") end)
 
--- Hệ thống thông báo tự động ẩn siêu tốc
-local function BuildNotification(title, message, accentColor)
-    local notifyFrame = Instance.new("Frame")
-    notifyFrame.Size = UDim2.new(0, 290, 0, 60)
-    notifyFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
-    notifyFrame.BackgroundTransparency = 0.1
-    notifyFrame.Parent = ScreenGui
-
-    local stroke = Instance.new("UIStroke", notifyFrame)
-    stroke.Color = accentColor or Color3.fromRGB(0, 255, 255)
-    stroke.Thickness = 1.5
-    Instance.new("UICorner", notifyFrame).CornerRadius = UDim.new(0, 6)
-
-    local textLabel = Instance.new("TextLabel", notifyFrame)
-    textLabel.Size = UDim2.new(1, -20, 1, 0)
-    textLabel.Position = UDim2.new(0, 10, 0, 0)
-    textLabel.Text = "<b>" .. title .. "</b>\n" .. message
-    textLabel.RichText = true
-    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    textLabel.Font = Enum.Font.GothamMedium
-    textLabel.TextSize = 12
-    textLabel.BackgroundTransparency = 1
-    textLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-    notifyFrame.Position = UDim2.new(1.3, 0, 0.82, 0)
-    TweenService:Create(notifyFrame, TweenInfo.new(0.35, Enum.EasingStyle.BackOut), {Position = UDim2.new(1, -310, 0.82, 0)}):Play()
+-- Hệ thống Toast Thông báo không xác nhận
+local function TriggerAlert(title, text, color)
+    local alert = Instance.new("Frame")
+    alert.Size = UDim2.new(0, 280, 0, 55)
+    alert.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
+    alert.BackgroundTransparency = 0.1
+    alert.Parent = ScreenGui
     
-    task.delay(2.0, function()
+    local stroke = Instance.new("UIStroke", alert)
+    stroke.Color = color or Color3.fromRGB(0, 255, 255)
+    stroke.Thickness = 1.2
+    Instance.new("UICorner", alert).CornerRadius = UDim.new(0, 5)
+    
+    local label = Instance.new("TextLabel", alert)
+    label.Size = UDim2.new(1, -20, 1, 0)
+    label.Position = UDim2.new(0, 10, 0, 0)
+    label.Text = "<b>" .. title .. "</b>\n" .. text
+    label.RichText = true
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 11
+    label.BackgroundTransparency = 1
+    label.TextXAlignment = Enum.TextXAlignment.Left
+
+    alert.Position = UDim2.new(1.2, 0, 0.85, 0)
+    TweenService:Create(alert, TweenInfo.new(0.3, Enum.EasingStyle.BackOut), {Position = UDim2.new(1, -300, 0.85, 0)}):Play()
+    
+    task.delay(1.8, function()
         pcall(function()
-            TweenService:Create(notifyFrame, TweenInfo.new(0.3, Enum.EasingStyle.QuartIn), {Position = UDim2.new(1.3, 0, 0.82, 0)}):Play()
-            task.wait(0.3)
-            notifyFrame:Destroy()
+            TweenService:Create(alert, TweenInfo.new(0.25, Enum.EasingStyle.QuadIn), {Position = UDim2.new(1.2, 0, 0.85, 0)}):Play()
+            task.wait(0.25)
+            alert:Destroy()
         end)
     end)
 end
 
--- Khung giao diện chính (Main Board)
-local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 620, 0, 390)
-Main.Position = UDim2.new(0.5, -310, 0.5, -195)
-Main.BackgroundColor3 = Color3.fromRGB(6, 6, 10)
-Main.Visible = false
-Main.Parent = ScreenGui
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 8)
-RegisterDragEngine(Main)
+-- Bảng mạch chính UI (Main Core Panel)
+local Panel = Instance.new("Frame")
+Panel.Size = UDim2.new(0, 560, 0, 360)
+Panel.Position = UDim2.new(0.5, -280, 0.5, -180)
+Panel.BackgroundColor3 = Color3.fromRGB(5, 5, 8)
+Panel.Visible = false
+Panel.Parent = ScreenGui
+Instance.new("UICorner", Panel).CornerRadius = UDim.new(0, 8)
+ApplyDragEngine(Panel)
 
-local MainStroke = Instance.new("UIStroke", Main)
-MainStroke.Thickness = 1.5
-local GradientAccent = Instance.new("UIGradient", MainStroke)
-GradientAccent.Color = ColorSequence.new{
+local PanelStroke = Instance.new("UIStroke", Panel)
+PanelStroke.Thickness = 1.5
+local PanelGradient = Instance.new("UIGradient", PanelStroke)
+PanelGradient.Color = ColorSequence.new{
     ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 255)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(191, 0, 255)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 128))
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(191, 0, 255))
 }
 
-local HeaderTitle = Instance.new("TextLabel", Main)
-HeaderTitle.Text = "⌬ ZENONIX OMNIVERSE EVO v4.0 [PREMIUM]"
-HeaderTitle.Font = Enum.Font.GothamBlack
-HeaderTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-HeaderTitle.TextSize = 15
-HeaderTitle.Position = UDim2.new(0, 20, 0, 14)
-HeaderTitle.Size = UDim2.new(0, 400, 0, 25)
-HeaderTitle.BackgroundTransparency = 1
-HeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
+local TopBarTitle = Instance.new("TextLabel", Panel)
+TopBarTitle.Text = "⌬ ZENONIX AIMLOCK SYSTEM CORE v5.0 // ENGINE"
+TopBarTitle.Font = Enum.Font.GothamBlack
+TopBarTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+TopBarTitle.TextSize = 13
+TopBarTitle.Position = UDim2.new(0, 16, 0, 12)
+TopBarTitle.Size = UDim2.new(0, 400, 0, 20)
+TopBarTitle.BackgroundTransparency = 1
+TopBarTitle.TextXAlignment = Enum.TextXAlignment.Left
 
-local CloseButton = Instance.new("TextButton", Main)
-CloseButton.Size = UDim2.new(0, 26, 0, 26)
-CloseButton.Position = UDim2.new(1, -38, 0, 14)
-CloseButton.BackgroundColor3 = Color3.fromRGB(255, 30, 80)
-CloseButton.Text = "✕"
-CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseButton.Font = Enum.Font.GothamBold
-CloseButton.TextSize = 11
-Instance.new("UICorner", CloseButton).CornerRadius = UDim.new(0, 6)
-CloseButton.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+local DestroyBtn = Instance.new("TextButton", Panel)
+DestroyBtn.Size = UDim2.new(0, 22, 0, 22)
+DestroyBtn.Position = UDim2.new(1, -34, 0, 12)
+DestroyBtn.BackgroundColor3 = Color3.fromRGB(255, 40, 80)
+DestroyBtn.Text = "✕"
+DestroyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+DestroyBtn.Font = Enum.Font.GothamBold
+DestroyBtn.TextSize = 10
+Instance.new("UICorner", DestroyBtn).CornerRadius = UDim.new(0, 5)
+DestroyBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() FOVCircle:Remove() TargetLine:Remove() end)
 
-local NavigationBar = Instance.new("Frame", Main)
-NavigationBar.Size = UDim2.new(0, 150, 1, -65)
-NavigationBar.Position = UDim2.new(0, 12, 0, 52)
-NavigationBar.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
-Instance.new("UICorner", NavigationBar).CornerRadius = UDim.new(0, 6)
+-- Danh mục phân tách Tab Trái
+local LeftTabShelf = Instance.new("Frame", Panel)
+LeftTabShelf.Size = UDim2.new(0, 140, 1, -55)
+LeftTabShelf.Position = UDim2.new(0, 12, 0, 45)
+LeftTabShelf.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+Instance.new("UICorner", LeftTabShelf).CornerRadius = UDim.new(0, 6)
 
-local ContainerDeck = Instance.new("Frame", Main)
-ContainerDeck.Size = UDim2.new(1, -188, 1, -65)
-ContainerDeck.Position = UDim2.new(0, 176, 0, 52)
-ContainerDeck.BackgroundTransparency = 1
+local RightDeck = Instance.new("Frame", Panel)
+RightDeck.Size = UDim2.new(1, -180, 1, -55)
+RightDeck.Position = UDim2.new(0, 164, 0, 45)
+RightDeck.BackgroundTransparency = 1
 
-local CurrentActiveTabBtn = nil
-local TabCountRegister = 0
+local ActiveDeckButton = nil
+local TotalRegisteredDecks = 0
 
-local function CreateTabChannel(tabName, tabIcon)
-    local pageScroll = Instance.new("ScrollingFrame", ContainerDeck)
-    pageScroll.Size = UDim2.new(1, 0, 1, 0)
-    pageScroll.BackgroundTransparency = 1
-    pageScroll.Visible = (TabCountRegister == 0)
-    pageScroll.ScrollBarThickness = 3
-    pageScroll.ScrollBarImageColor3 = Color3.fromRGB(191, 0, 255)
-    pageScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+local function InsertSubDeck(name, symbol)
+    local container = Instance.new("ScrollingFrame", RightDeck)
+    container.Size = UDim2.new(1, 0, 1, 0)
+    container.BackgroundTransparency = 1
+    container.Visible = (TotalRegisteredDecks == 0)
+    container.ScrollBarThickness = 2
+    container.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 255)
+    container.CanvasSize = UDim2.new(0, 0, 0, 0)
     
-    local listLayout = Instance.new("UIListLayout", pageScroll)
-    listLayout.Padding = UDim.new(0, 6)
-    listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-    listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        pageScroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 15)
+    local layout = Instance.new("UIListLayout", container)
+    layout.Padding = UDim.new(0, 6)
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        container.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 15)
     end)
 
-    local tabBtn = Instance.new("TextButton", NavigationBar)
-    tabBtn.Size = UDim2.new(0.92, 0, 0, 36)
-    tabBtn.Position = UDim2.new(0.04, 0, 0, TabCountRegister * 40 + 8)
-    tabBtn.BackgroundColor3 = (TabCountRegister == 0) and Color3.fromRGB(28, 28, 40) or Color3.fromRGB(18, 18, 24)
-    tabBtn.Text = "  " .. tabIcon .. "  " .. tabName
-    tabBtn.TextColor3 = (TabCountRegister == 0) and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 160, 160)
-    tabBtn.Font = Enum.Font.GothamBold
-    tabBtn.TextSize = 11
-    tabBtn.TextXAlignment = Enum.TextXAlignment.Left
-    Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 6)
+    local button = Instance.new("TextButton", LeftTabShelf)
+    button.Size = UDim2.new(0.92, 0, 0, 34)
+    button.Position = UDim2.new(0.04, 0, 0, TotalRegisteredDecks * 38 + 8)
+    button.BackgroundColor3 = (TotalRegisteredDecks == 0) and Color3.fromRGB(25, 25, 35) or Color3.fromRGB(14, 14, 20)
+    button.Text = "  " .. symbol .. "  " .. name
+    button.TextColor3 = (TotalRegisteredDecks == 0) and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 150, 150)
+    button.Font = Enum.Font.GothamBold
+    button.TextSize = 10
+    button.TextXAlignment = Enum.TextXAlignment.Left
+    Instance.new("UICorner", button).CornerRadius = UDim.new(0, 5)
 
-    if TabCountRegister == 0 then CurrentActiveTabBtn = tabBtn end
+    if TotalRegisteredDecks == 0 then ActiveDeckButton = button end
 
-    tabBtn.MouseButton1Click:Connect(function()
-        if CurrentActiveTabBtn then
-            TweenService:Create(CurrentActiveTabBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(18, 18, 24), TextColor3 = Color3.fromRGB(160, 160, 160)}):Play()
+    button.MouseButton1Click:Connect(function()
+        if ActiveDeckButton then
+            TweenService:Create(ActiveDeckButton, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(14, 14, 20), TextColor3 = Color3.fromRGB(150, 150, 150)}):Play()
         end
-        CurrentActiveTabBtn = tabBtn
-        TweenService:Create(tabBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(28, 28, 40), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+        ActiveDeckButton = button
+        TweenService:Create(button, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(25, 25, 35), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
         
-        for _, v in pairs(ContainerDeck:GetChildren()) do 
-            if v:IsA("ScrollingFrame") then v.Visible = false end 
+        for _, obj in pairs(RightDeck:GetChildren()) do
+            if obj:IsA("ScrollingFrame") then obj.Visible = false end
         end
-        pageScroll.Visible = true
+        container.Visible = true
     end)
-    
-    TabCountRegister = TabCountRegister + 1
-    return pageScroll
+
+    TotalRegisteredDecks = TotalRegisteredDecks + 1
+    return container
 end
 
--- Đăng ký hệ thống Tab đa năng
-local TabCombat = CreateTabChannel("Rage Combat", "🎯")
-local TabVisuals = CreateTabChannel("Thấu Thị ESP", "🔮")
-local TabMovement = CreateTabChannel("Di Chuyển Mod", "⚡")
-local TabWorldMap = CreateTabChannel("Thế Giới / Khử Lag", "🌐")
+-- Tạo các Tab điều khiển cấu trúc chuyên biệt cho Aimlock
+local DeckCore = InsertSubDeck("Cốt Lõi Aim", "🎯")
+local DeckMath = InsertSubDeck("Toán Học/Smooth", "⚙️")
+local DeckFovConfig = InsertSubDeck("Vòng Quét FOV", "⭕")
+local DeckMonitor = InsertSubDeck("Bảng Giám Sát", "📊")
 
--- ==================== [ HỆ THỐNG PHẦN TỬ COMPONENT NÂNG CAO ] ====================
+-- ==================== [ THÀNH PHẦN HOẠT ĐỘNG CHUYÊN BIỆT (COMPONENTS) ] ====================
 
--- 1. Thêm Toggle nhanh công suất lớn
-local function InjectToggle(text, parent, configKey, colorTheme)
-    local toggleFrame = Instance.new("TextButton", parent)
-    toggleFrame.Size = UDim2.new(0.96, 0, 0, 38)
-    toggleFrame.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
-    toggleFrame.Text = "     " .. text
-    toggleFrame.TextColor3 = Color3.fromRGB(230, 230, 230)
-    toggleFrame.TextXAlignment = Enum.TextXAlignment.Left
-    toggleFrame.Font = Enum.Font.GothamSemibold
-    toggleFrame.TextSize = 11
-    Instance.new("UICorner", toggleFrame).CornerRadius = UDim.new(0, 6)
+local function CreateToggle(labelText, targetDeck, configKey, themeColor)
+    local frame = Instance.new("TextButton", targetDeck)
+    frame.Size = UDim2.new(0.96, 0, 0, 36)
+    frame.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+    frame.Text = "     " .. labelText
+    frame.TextColor3 = Color3.fromRGB(220, 220, 220)
+    frame.TextXAlignment = Enum.TextXAlignment.Left
+    frame.Font = Enum.Font.GothamSemibold
+    frame.TextSize = 10.5
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 5)
 
-    local stateDot = Instance.new("Frame", toggleFrame)
-    stateDot.Size = UDim2.new(0, 14, 0, 14)
-    stateDot.Position = UDim2.new(1, -26, 0.5, -7)
-    stateDot.BackgroundColor3 = Settings[configKey] and colorTheme or Color3.fromRGB(40, 40, 50)
-    Instance.new("UICorner", stateDot).CornerRadius = UDim.new(1, 0)
+    local dot = Instance.new("Frame", frame)
+    dot.Size = UDim2.new(0, 12, 0, 12)
+    dot.Position = UDim2.new(1, -24, 0.5, -6)
+    dot.BackgroundColor3 = Settings[configKey] and themeColor or Color3.fromRGB(35, 35, 45)
+    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
 
-    toggleFrame.MouseButton1Click:Connect(function()
+    frame.MouseButton1Click:Connect(function()
         Settings[configKey] = not Settings[configKey]
-        TweenService:Create(stateDot, TweenInfo.new(0.2), {BackgroundColor3 = Settings[configKey] and colorTheme or Color3.fromRGB(40, 40, 50)}):Play()
-        BuildNotification("ZENONIX HUB", text .. " -> " .. (Settings[configKey] and "ĐÃ BẬT" or "ĐÃ TẮT"), Settings[configKey] and colorTheme or Color3.fromRGB(255, 50, 50))
+        TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = Settings[configKey] and themeColor or Color3.fromRGB(35, 35, 45)}):Play()
+        TriggerAlert("AIMLOCK MOD", labelText .. " -> " .. (Settings[configKey] and "ĐÃ BẬT" or "ĐÃ TẮT"), Settings[configKey] and themeColor or Color3.fromRGB(255, 60, 60))
     end)
 end
 
--- 2. Thêm Slider điều chỉnh thông số chính xác
-local function InjectSlider(text, parent, minVal, maxVal, configKey, defaultVal, suffix)
-    Settings[configKey] = defaultVal
-    suffix = suffix or ""
+local function CreateSlider(labelText, targetDeck, minimum, maximum, configKey, default, unit)
+    Settings[configKey] = default
+    unit = unit or ""
     
-    local sliderBox = Instance.new("Frame", parent)
-    sliderBox.Size = UDim2.new(0.96, 0, 0, 48)
-    sliderBox.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
-    Instance.new("UICorner", sliderBox).CornerRadius = UDim.new(0, 6)
+    local box = Instance.new("Frame", targetDeck)
+    box.Size = UDim2.new(0.96, 0, 0, 46)
+    box.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 5)
 
-    local infoLabel = Instance.new("TextLabel", sliderBox)
-    infoLabel.Size = UDim2.new(0.8, 0, 0, 22)
-    infoLabel.Position = UDim2.new(0, 12, 0, 4)
-    infoLabel.Text = text .. ": " .. tostring(defaultVal) .. suffix
-    infoLabel.Font = Enum.Font.GothamSemibold
-    infoLabel.TextSize = 11
-    infoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    infoLabel.BackgroundTransparency = 1
-    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+    local indicator = Instance.new("TextLabel", box)
+    indicator.Size = UDim2.new(0.8, 0, 0, 20)
+    indicator.Position = UDim2.new(0, 12, 0, 4)
+    indicator.Text = labelText .. ": " .. tostring(default) .. unit
+    indicator.Font = Enum.Font.GothamSemibold
+    indicator.TextSize = 10.5
+    indicator.TextColor3 = Color3.fromRGB(190, 190, 190)
+    indicator.BackgroundTransparency = 1
+    indicator.TextXAlignment = Enum.TextXAlignment.Left
 
-    local trackBtn = Instance.new("TextButton", sliderBox)
-    trackBtn.Size = UDim2.new(0.94, 0, 0, 5)
-    trackBtn.Position = UDim2.new(0.03, 0, 1, -12)
-    trackBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-    trackBtn.Text = ""
-    Instance.new("UICorner", trackBtn)
+    local bar = Instance.new("TextButton", box)
+    bar.Size = UDim2.new(0.94, 0, 0, 4)
+    bar.Position = UDim2.new(0.03, 0, 1, -10)
+    bar.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+    bar.Text = ""
+    Instance.new("UICorner", bar)
 
-    local progressFill = Instance.new("Frame", trackBtn)
-    progressFill.Size = UDim2.new((defaultVal - minVal) / (maxVal - minVal), 0, 1, 0)
-    progressFill.BackgroundColor3 = Color3.fromRGB(191, 0, 255)
-    Instance.new("UICorner", progressFill)
+    local fill = Instance.new("Frame", bar)
+    fill.Size = UDim2.new((default - minimum) / (maximum - minimum), 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+    Instance.new("UICorner", fill)
 
-    local function RecalculateSlider(input)
-        local ratioX = math.clamp((input.Position.X - trackBtn.AbsolutePosition.X) / trackBtn.AbsoluteSize.X, 0, 1)
-        local targetValue = math.floor(minVal + (maxVal - minVal) * ratioX)
-        Settings[configKey] = targetValue
-        infoLabel.Text = text .. ": " .. tostring(targetValue) .. suffix
-        progressFill.Size = UDim2.new(ratioX, 0, 1, 0)
+    local function Adjust(input)
+        local ratio = math.clamp((input.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+        local exactVal = minimum + (maximum - minimum) * ratio
+        if maximum <= 2 then
+            exactVal = math.round(exactVal * 1000) / 1000
+        else
+            exactVal = math.floor(exactVal)
+        end
+        Settings[configKey] = exactVal
+        indicator.Text = labelText .. ": " .. tostring(exactVal) .. unit
+        fill.Size = UDim2.new(ratio, 0, 1, 0)
     end
 
-    local isSliding = false
-    trackBtn.InputBegan:Connect(function(input)
+    local holding = false
+    bar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            isSliding = true
-            RecalculateSlider(input)
+            holding = true; Adjust(input)
         end
     end)
     UserInputService.InputChanged:Connect(function(input)
-        if isSliding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            RecalculateSlider(input)
+        if holding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            Adjust(input)
         end
     end)
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            isSliding = false
+            holding = false
         end
     end)
 end
 
--- 3. Thêm Dropdown tùy biến lựa chọn chiến thuật
-local function InjectDropdown(text, parent, optionsList, configKey)
-    local dropFrame = Instance.new("Frame", parent)
-    dropFrame.Size = UDim2.new(0.96, 0, 0, 38)
-    dropFrame.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
-    Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 6)
-    dropFrame.ClipsDescendants = true
+local function CreateDropdown(labelText, targetDeck, options, configKey)
+    local drop = Instance.new("Frame", targetDeck)
+    drop.Size = UDim2.new(0.96, 0, 0, 36)
+    drop.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+    Instance.new("UICorner", drop).CornerRadius = UDim.new(0, 5)
+    drop.ClipsDescendants = true
 
-    local mainTrigger = Instance.new("TextButton", dropFrame)
-    mainTrigger.Size = UDim2.new(1, 0, 0, 38)
-    mainTrigger.BackgroundTransparency = 1
-    mainTrigger.Text = "     " .. text .. ": " .. tostring(Settings[configKey])
-    mainTrigger.TextColor3 = Color3.fromRGB(0, 255, 255)
-    mainTrigger.Font = Enum.Font.GothamBold
-    mainTrigger.TextSize = 11
-    mainTrigger.TextXAlignment = Enum.TextXAlignment.Left
+    local action = Instance.new("TextButton", drop)
+    action.Size = UDim2.new(1, 0, 0, 36)
+    action.BackgroundTransparency = 1
+    action.Text = "     " .. labelText .. ": " .. tostring(Settings[configKey])
+    action.TextColor3 = Color3.fromRGB(191, 0, 255)
+    action.Font = Enum.Font.GothamBold
+    action.TextSize = 10.5
+    action.TextXAlignment = Enum.TextXAlignment.Left
 
-    local isExpanded = false
-    mainTrigger.MouseButton1Click:Connect(function()
-        isExpanded = not isExpanded
-        TweenService:Create(dropFrame, TweenInfo.new(0.2), {Size = isExpanded and UDim2.new(0.96, 0, 0, 38 + (#optionsList * 28)) or UDim2.new(0.96, 0, 0, 38)}):Play()
+    local open = false
+    action.MouseButton1Click:Connect(function()
+        open = not open
+        TweenService:Create(drop, TweenInfo.new(0.2), {Size = open and UDim2.new(0.96, 0, 0, 36 + (#options * 26)) or UDim2.new(0.96, 0, 0, 36)}):Play()
     end)
 
-    for idx, selection in ipairs(optionsList) do
-        local optBtn = Instance.new("TextButton", dropFrame)
-        optBtn.Size = UDim2.new(0.94, 0, 0, 24)
-        optBtn.Position = UDim2.new(0.03, 0, 0, 38 + (idx - 1) * 28)
-        optBtn.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
-        optBtn.Text = selection
-        optBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        optBtn.Font = Enum.Font.GothamMedium
-        optBtn.TextSize = 11
-        Instance.new("UICorner", optBtn)
+    for i, choice in ipairs(options) do
+        local opt = Instance.new("TextButton", drop)
+        opt.Size = UDim2.new(0.94, 0, 0, 22)
+        opt.Position = UDim2.new(0.03, 0, 0, 36 + (i - 1) * 26)
+        opt.BackgroundColor3 = Color3.fromRGB(18, 18, 26)
+        opt.Text = choice
+        opt.TextColor3 = Color3.fromRGB(255, 255, 255)
+        opt.Font = Enum.Font.GothamMedium
+        opt.TextSize = 10
+        Instance.new("UICorner", opt)
 
-        optBtn.MouseButton1Click:Connect(function()
-            Settings[configKey] = selection
-            mainTrigger.Text = "     " .. text .. ": " .. selection
-            isExpanded = false
-            TweenService:Create(dropFrame, TweenInfo.new(0.2), {Size = UDim2.new(0.96, 0, 0, 38)}):Play()
-            BuildNotification("ZENONIX", "Đã chuyển đổi mục tiêu -> " .. selection, Color3.fromRGB(191, 0, 255))
+        opt.MouseButton1Click:Connect(function()
+            Settings[configKey] = choice
+            action.Text = "     " .. labelText .. ": " .. choice
+            open = false
+            TweenService:Create(drop, TweenInfo.new(0.2), {Size = UDim2.new(0.96, 0, 0, 36)}):Play()
+            TriggerAlert("HỆ THỐNG", "Chuyển cấu hình chế độ sang: " .. choice, Color3.fromRGB(0, 255, 255))
         end)
     end
 end
 
--- ==================== [ NẠP CÁC PHẦN TỬ ĐIỀU KHIỂN ] ====================
+-- ==================== [ NẠP ĐẦY ĐỦ CÁC THÔNG SỐ ĐIỀU KHIỂN ] ====================
 
--- Bộ điều khiển Combat
-InjectToggle("Kích Hoạt Silent Aimlock", TabCombat, "Aimlock", Color3.fromRGB(0, 255, 255))
-InjectDropdown("Chế Độ Ưu Tiên Aim", TabCombat, {"Khoảng Cách Thực (Gần Nhất)", "Tâm Chuột (Closest Mouse)"}, "AimType")
-InjectDropdown("Vùng Khóa Mục Tiêu", TabCombat, {"HumanoidRootPart", "Head", "UpperTorso"}, "TargetPart")
-InjectToggle("Hiển Thị Vòng Tròn FOV", TabCombat, "ShowFOV", Color3.fromRGB(191, 0, 255))
-InjectSlider("Bán Kính Vòng Quét FOV", TabCombat, 40, 500, "FOVRadius", 150, "px")
-InjectSlider("Độ Mượt Ngắm Lập Lè (Smooth)", TabCombat, 1, 30, "Smoothing", 8, " (Thấp càng khóa chặt)")
-InjectToggle("Kiểm Tra Đồng Đội (Team)", TabCombat, "TeamCheck", Color3.fromRGB(255, 165, 0))
-InjectToggle("Phóng Đại Kích Thước Hitbox", TabCombat, "Hitbox", Color3.fromRGB(255, 0, 128))
-InjectSlider("Kích Thước Khối Hitbox", TabCombat, 2, 40, "HitboxSize", 15, " studs")
-InjectDropdown("Bộ Phận Phóng Hitbox", TabCombat, {"HumanoidRootPart", "Head"}, "HitboxPart")
-InjectToggle("Kill Aura Cận Chiến Tốc Độ", TabCombat, "KillAura", Color3.fromRGB(255, 40, 40))
-InjectSlider("Phạm Vi Quét Aura Sát Thương", TabCombat, 10, 60, "AuraRange", 25, " studs")
-InjectToggle("Auto Đánh / Click Liên Tục", TabCombat, "AutoAttack", Color3.fromRGB(255, 120, 0))
+-- Tab 1: Cốt Lõi Hệ thống Ngắm
+CreateToggle("Kích Hoạt Khóa Ngắm (Aimlock)", DeckCore, "Enabled", Color3.fromRGB(0, 255, 255))
+CreateDropdown("Chế Độ Ưu Tiên Mục Tiêu", DeckCore, {"Khoảng Cách Thực (Gần Nhất)", "Tâm Màn Hình"}, "AimType")
+CreateDropdown("Mục Tiêu Khóa Xương", DeckCore, {"Tự Động (Closest Joint)", "Head", "HumanoidRootPart", "UpperTorso"}, "TargetPartMode")
+CreateToggle("Lọc Đồng Đội (Team Check)", DeckCore, "TeamCheck", Color3.fromRGB(255, 170, 0))
+CreateToggle("Kiểm Tra Vật Cản (Wall Check)", DeckCore, "WallCheck", Color3.fromRGB(0, 255, 128))
+CreateToggle("Bỏ Qua Người Bị Gục (Knocked)", DeckCore, "KnockedCheck", Color3.fromRGB(255, 50, 100))
 
--- Bộ điều khiển Thấu Thị ESP
-InjectToggle("Hiện Khung Hình Kẻ Địch (Box)", TabVisuals, "ESP_Boxes", Color3.fromRGB(0, 255, 128))
-InjectToggle("Hiện Chỉ Hướng Định Vị (Tracer)", TabVisuals, "ESP_Tracers", Color3.fromRGB(0, 255, 255))
-InjectToggle("Hiện Tên Người Chơi (Names)", TabVisuals, "ESP_Names", Color3.fromRGB(255, 255, 255))
-InjectToggle("Hiện Khoảng Cách Định Định (Dist)", TabVisuals, "ESP_Distance", Color3.fromRGB(255, 215, 0))
+-- Tab 2: Thuật Toán Toán Học Nâng Cao
+CreateDropdown("Thuật Toán Dự Đoán (Prediction)", DeckMath, {"Gia Tốc Nâng Cao", "Tuyến Tính Basic", "Bù Trừ Ping"}, "PredictionMode")
+CreateSlider("Hệ Số Dự Đoán Đạn (Predict)", DeckMath, 0.01, 0.4, "PredictionAmount", 0.134, "s")
+CreateDropdown("Kiểu Khử Giật (Smoothing)", DeckMath, {"Bezier Curve Interpolation", "Exponential", "Tuyến Tính"}, "SmoothingMode")
+CreateSlider("Độ Mượt Ngắm Lọc (Smoothness)", DeckMath, 0.005, 0.3, "Smoothness", 0.065, " (Thấp càng dính chặt)")
+CreateSlider("Trọng Số Ngắm Ngang (Weight X)", DeckMath, 0.1, 2.0, "WeightX", 1.0)
+CreateSlider("Trọng Số Ngắm Dọc (Weight Y)", DeckMath, 0.1, 2.0, "WeightY", 1.0)
 
--- Bộ điều khiển Di Chuyển Mod
-InjectToggle("Kích Hoạt Siêu Tốc Độ Chạy", TabMovement, "SpeedHack", Color3.fromRGB(255, 100, 0))
-InjectSlider("Tốc Độ Di Chuyển", TabMovement, 16, 300, "SpeedValue", 100, " m/s")
-InjectToggle("Kích Hoạt Nhảy Cao", TabMovement, "JumpHack", Color3.fromRGB(0, 255, 150))
-InjectSlider("Lực Nhảy Nhân Vật", TabMovement, 50, 250, "JumpValue", 100, " lực")
-InjectToggle("Nhảy Vô Hạn Không Chạm Đất", TabMovement, "InfJump", Color3.fromRGB(255, 255, 255))
-InjectToggle("Đi Xuyên Mọi Bức Tường (Noclip)", TabMovement, "Noclip", Color3.fromRGB(150, 150, 150))
-InjectToggle("Xoay Tròn Tránh Đạn (Spinbot)", TabMovement, "Spinbot", Color3.fromRGB(200, 0, 255))
-InjectSlider("Tốc Độ Vòng Xoay Spinbot", TabMovement, 10, 200, "SpinSpeed", 60)
+-- Tab 3: Tùy Chỉnh Vòng Quét FOV
+CreateToggle("Hiển Thị Vòng Quét FOV", DeckFovConfig, "ShowFOV", Color3.fromRGB(191, 0, 255))
+CreateToggle("Hiệu Ứng Vòng Đổi Màu (Rainbow)", DeckFovConfig, "RainbowFOV", Color3.fromRGB(0, 255, 255))
+CreateSlider("Bán Kính Quét Địch (Radius)", DeckFovConfig, 30, 600, "FOVRadius", 180, "px")
+CreateSlider("Độ Dày Nét Vẽ Vòng (Thickness)", DeckFovConfig, 1, 5, "FOVThickness", 2, "px")
 
--- Bộ điều khiển Thế Giới & Chống Lag
-InjectToggle("Bật Sáng Toàn Bản Đồ (Fullbright)", TabWorldMap, "FullBright", Color3.fromRGB(255, 255, 100))
-InjectToggle("Cấu Hình Chế Độ Ban Đêm", TabWorldMap, "NightMode", Color3.fromRGB(50, 50, 200))
-InjectToggle("Tối Ưu Giảm Lag Cực Hạn (Mobile/PC)", TabWorldMap, "AntiLag", Color3.fromRGB(0, 255, 0))
-InjectToggle("Xóa Bỏ Toàn Bộ Texture Vật Liệu", TabWorldMap, "NoTextures", Color3.fromRGB(255, 0, 0))
+-- Tab 4: Màn Hình Monitor Đo Đạc Thông Số Real-Time
+local TargetDataBox = Instance.new("Frame", DeckMonitor)
+TargetDataBox.Size = UDim2.new(0.96, 0, 0, 120)
+TargetDataBox.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
+Instance.new("UICorner", TargetDataBox).CornerRadius = UDim.new(0, 6)
 
--- ==================== [ NÚT BẬT TẮT GIAO DIỆN DI ĐỘNG ] ====================
-local MobileMenuButton = Instance.new("TextButton", ScreenGui)
-MobileMenuButton.Size = UDim2.new(0, 50, 0, 50)
-MobileMenuButton.Position = UDim2.new(0, 15, 0.38, 0)
-MobileMenuButton.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
-MobileMenuButton.Text = "⌬"
-MobileMenuButton.TextColor3 = Color3.fromRGB(0, 255, 255)
-MobileMenuButton.Font = Enum.Font.GothamBlack
-MobileMenuButton.TextSize = 26
-Instance.new("UICorner", MobileMenuButton).CornerRadius = UDim.new(1, 0)
-local TransStroke = Instance.new("UIStroke", MobileMenuButton)
-TransStroke.Color = Color3.fromRGB(255, 0, 128)
-TransStroke.Thickness = 1.5
-RegisterDragEngine(MobileMenuButton)
+local MonitorLabel = Instance.new("TextLabel", TargetDataBox)
+MonitorLabel.Size = UDim2.new(1, -24, 1, -16)
+MonitorLabel.Position = UDim2.new(0, 12, 0, 8)
+MonitorLabel.BackgroundTransparency = 1
+MonitorLabel.Font = Enum.Font.Code
+MonitorLabel.TextSize = 11
+MonitorLabel.TextColor3 = Color3.fromRGB(0, 255, 128)
+MonitorLabel.TextXAlignment = Enum.TextXAlignment.Left
+MonitorLabel.TextYAlignment = Enum.TextYAlignment.Top
+MonitorLabel.Text = "HỆ THỐNG GIÁM SÁT MỤC TIÊU:\n--------------------\n[Mục Tiêu]: Không có\n[Khoảng Cách]: 0 studs\n[Vận Tốc]: 0, 0, 0\n[Độ Khả Dụng]: Chờ..."
 
-MobileMenuButton.MouseButton1Click:Connect(function() Main.Visible = not Main.Visible end)
-UserInputService.InputBegan:Connect(function(k) 
-    if k.KeyCode == Settings.MenuKey then Main.Visible = not Main.Visible end 
+-- ==================== [ NÚT BẬT MENU TRÊN DI ĐỘNG (MOBILE TOGGLE) ] ====================
+local MobileMenuIcon = Instance.new("TextButton", ScreenGui)
+MobileMenuIcon.Size = UDim2.new(0, 46, 0, 46)
+MobileMenuIcon.Position = UDim2.new(0, 12, 0, 12)
+MobileMenuIcon.BackgroundColor3 = Color3.fromRGB(6, 6, 10)
+MobileMenuIcon.Text = "🎯"
+MobileMenuIcon.TextColor3 = Color3.fromRGB(0, 255, 255)
+MobileMenuIcon.Font = Enum.Font.GothamBlack
+MobileMenuIcon.TextSize = 20
+Instance.new("UICorner", MobileMenuIcon).CornerRadius = UDim.new(1, 0)
+local IconStroke = Instance.new("UIStroke", MobileMenuIcon)
+IconStroke.Color = Color3.fromRGB(191, 0, 255)
+IconStroke.Thickness = 1.2
+ApplyDragEngine(MobileMenuIcon)
+
+MobileMenuIcon.MouseButton1Click:Connect(function() Panel.Visible = not Panel.Visible end)
+UserInputService.InputBegan:Connect(function(key)
+    if key.KeyCode == Settings.MenuKey then Panel.Visible = not Panel.Visible end
 end)
 
--- ==================== [ ĐỘNG CƠ XỬ LÝ NHẬN DIỆN MỤC TIÊU GẦN NHẤT ] ====================
-local function AcquireOptimumTarget()
-    local targetChosen = nil
-    local minimumMeasure = math.huge
+-- ==================== [ ĐỘNG CƠ TÌM KIẾM MỤC TIÊU GẦN NHẤT CHUYÊN SÂU ] ====================
+local function ScanForOptimalTarget()
+    local chosenTarget = nil
+    local shortestDistance = math.huge
     
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return nil end
+    if not myRoot then return nil, nil end
 
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character then
-            local eRoot = p.Character:FindFirstChild("HumanoidRootPart")
-            local eHum = p.Character:FindFirstChildOfClass("Humanoid")
-            
-            if eRoot and eHum and eHum.Health > 0 then
-                -- Kiểm tra cài đặt lọc đồng đội
+            local enemyRoot = p.Character:FindFirstChild("HumanoidRootPart")
+            if enemyRoot and PhysicsEngine.CheckHealth(p) then
+                
+                -- Lọc Đồng Đội
                 if Settings.TeamCheck and p.Team == LocalPlayer.Team then continue end
                 
-                local screenPos, isValidPos = Camera:WorldToViewportPoint(eRoot.Position)
-                
-                -- Nếu bật kiểm tra vòng FOV ngắm bắn
-                if Settings.ShowFOV then
-                    local distFromCursor = (Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2) - Vector2.new(screenPos.X, screenPos.Y)).Magnitude
-                    if distFromCursor > Settings.FOVRadius then continue end
+                -- Xác định bộ phận quét
+                local scanPart = enemyRoot
+                if Settings.TargetPartMode == "Tự Động (Closest Joint)" then
+                    local closestJointDist = math.huge
+                    for _, jointName in ipairs({"Head", "HumanoidRootPart", "UpperTorso"}) do
+                        local jointObj = p.Character:FindFirstChild(jointName)
+                        if jointObj then
+                            local sPos, inBound = Camera:WorldToViewportPoint(jointObj.Position)
+                            if inBound then
+                                local cDist = (Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2) - Vector2.new(sPos.X, sPos.Y)).Magnitude
+                                if cDist < closestJointDist then
+                                    closestJointDist = cDist
+                                    scanPart = jointObj
+                                end
+                            end
+                        end
+                    end
+                else
+                    local forcedPart = p.Character:FindFirstChild(Settings.TargetPartMode)
+                    if forcedPart then scanPart = forcedPart end
                 end
 
-                -- Chế độ 1: Quét mục tiêu có vị trí gần cơ thể bạn nhất trên bản đồ (Absolute Proximity)
+                -- Kiểm tra tường chắn tầm nhìn
+                if not PhysicsEngine.IsVisible(scanPart, p.Character) then continue end
+
+                local screenPos, onScreen = Camera:WorldToViewportPoint(scanPart.Position)
+                
+                -- Kiểm tra bán kính FOV giới hạn nếu bật cấu hình ShowFOV
+                if Settings.ShowFOV then
+                    local distFromCenter = (Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2) - Vector2.new(screenPos.X, screenPos.Y)).Magnitude
+                    if distFromCenter > Settings.FOVRadius then continue end
+                end
+
+                -- Thực thi lọc đa chế độ (Xử lý ưu tiên khoảng cách gần bạn nhất hoặc gần chuột nhất)
                 if Settings.AimType == "Khoảng Cách Thực (Gần Nhất)" then
-                    local absoluteWorldDist = (myRoot.Position - eRoot.Position).Magnitude
-                    if absoluteWorldDist < minimumMeasure then
-                        minimumMeasure = absoluteWorldDist
-                        targetChosen = p
+                    local realWorldDist = MathEngine.GetDistanceInStuds(myRoot.Position, scanPart.Position)
+                    if realWorldDist < shortestDistance then
+                        shortestDistance = realWorldDist
+                        chosenTarget = {Player = p, Part = scanPart}
                     end
-                -- Chế độ 2: Quét mục tiêu gần tâm con trỏ chuột nhất trên màn hình
-                elseif Settings.AimType == "Tâm Chuột (Closest Mouse)" then
-                    local centerScreenDist = (Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2) - Vector2.new(screenPos.X, screenPos.Y)).Magnitude
-                    if centerScreenDist < minimumMeasure then
-                        minimumMeasure = centerScreenDist
-                        targetChosen = p
+                elseif Settings.AimType == "Tâm Màn Hình" then
+                    local centerMouseDist = MathEngine.GetScreenDistance(Camera.ViewportSize / 2, screenPos)
+                    if centerMouseDist < shortestDistance then
+                        shortestDistance = centerMouseDist
+                        chosenTarget = {Player = p, Part = scanPart}
                     end
                 end
             end
         end
     end
-    return targetChosen
+    
+    if chosenTarget then
+        return chosenTarget.Player, chosenTarget.Part
+    end
+    return nil, nil
 end
 
--- ==================== [ ĐỘNG CƠ KHỬ GIẬT LAG & XÓA MAP ] ====================
-local function PurgeTexturesEngine()
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and Settings.NoTextures then
-            obj.Material = Enum.Material.SmoothPlastic
-        elseif (obj:IsA("Decal") or obj:IsA("Texture")) and Settings.AntiLag then
-            obj:Destroy()
-        elseif (obj:IsA("Atmosphere") or obj:IsA("Sky")) and Settings.AntiLag then
-            obj:Destroy()
+-- ==================== [ LẮP RÁP BỘ ĐIỀU KHIỂN BẤM PHÍM KHÓA MỤC TIÊU ] ====================
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Settings.ToggleKey then
+        if Settings.IsHoldMode then
+            AimlockActive = true
+        else
+            AimlockActive = not AimlockActive
+            TriggerAlert("AIMLOCK", AimlockActive and "ĐÃ KHÓA SĂN MỤC TIÊU" or "ĐÃ HỦY KHÓA MỤC TIÊU", AimlockActive and Color3.fromRGB(0,255,255) or Color3.fromRGB(255,50,50))
         end
     end
-end
+end)
 
--- ==================== [ LUỒNG ĐỒ HỌA CAO CẤP (RENDERSTEPPED CRITICAL) ] ====================
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Settings.ToggleKey and Settings.IsHoldMode then
+        AimlockActive = false
+    end
+end)
+
+-- ==================== [ LUỒNG VẼ ĐỒ HỌA LIÊN TỤC VÀ HOẠT HỌA FOV (RENDERSTEPPED) ] ====================
 RunService.RenderStepped:Connect(function()
-    -- Cập nhật trạng thái vòng tròn giới hạn ngắm
-    if Settings.ShowFOV then
+    -- Đồng bộ hóa hiệu ứng Rainbow
+    RainbowHue = (RainbowHue + 0.005) % 1
+    local dynamicColor = Color3.fromHSV(RainbowHue, 0.9, 1)
+    
+    -- Xử lý hiển thị vòng quét FOV ngắm bắn
+    if Settings.ShowFOV and Settings.Enabled then
         FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
         FOVCircle.Radius = Settings.FOVRadius
+        FOVCircle.Thickness = Settings.FOVThickness
+        FOVCircle.NumSides = Settings.FOVSides
+        FOVCircle.Color = Settings.RainbowFOV and dynamicColor or Settings.FOVColor
+        FOVCircle.Transparency = Settings.FOVTransparency
         FOVCircle.Visible = true
     else
         FOVCircle.Visible = false
     end
 
-    -- Vòng lặp xử lý vẽ hệ thống thấu thị siêu tốc
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            local char = p.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
+    -- Khởi chạy chu kỳ ngắm khóa nếu cấu hình tổng được bật
+    if Settings.Enabled and AimlockActive then
+        local pTarget, partTarget = ScanForOptimalTarget()
+        CurrentTarget = pTarget
+        
+        if pTarget and partTarget then
+            local targetPosition = partTarget.Position
+            local velocityComp = partTarget.Velocity
             
-            if root and hum and hum.Health > 0 then
-                local vectorCoord, isPointVisible = Camera:WorldToViewportPoint(root.Position)
+            -- Thực thi thuật toán Dự đoán quỹ đạo di chuyển dựa trên tùy chọn nâng cao
+            if Settings.PredictionMode == "Gia Tốc Nâng Cao" then
+                targetPosition = targetPosition + (velocityComp * Settings.PredictionAmount)
+            elseif Settings.PredictionMode == "Bù Trừ Ping" then
+                local playerPing = 0.06 -- Giả lập ping cơ sở trung bình
+                pcall(function() playerPing = LocalPlayer:GetNetworkPing() end)
+                targetPosition = targetPosition + (velocityComp * playerPing * (Settings.PredictionAmount * 7))
+            elseif Settings.PredictionMode == "Tuyến Tính Basic" then
+                targetPosition = targetPosition + (velocityComp * 0.1)
+            end
+            
+            -- Tính toán Ma trận góc quay của Camera
+            local targetLookCFrame = CFrame.lookAt(Camera.CFrame.Position, targetPosition)
+            
+            -- Áp dụng bộ lọc nội suy làm mượt (Smoothing Engine)
+            if Settings.SmoothingMode == "Bezier Curve Interpolation" then
+                local controlPoint = Camera.CFrame:Lerp(targetLookCFrame, 0.5).Position + Vector3.new(0, 0.1, 0)
+                local currentPos = Camera.CFrame.Position
+                local nextCFrameLook = targetLookCFrame.Position
                 
-                if isPointVisible then
-                    local buildCache = Cache_ESP[p] or {
-                        Box = Drawing.new("Square"),
-                        Tracer = Drawing.new("Line"),
-                        NameLabel = Drawing.new("Text"),
-                        DistLabel = Drawing.new("Text")
-                    }
-                    Cache_ESP[p] = buildCache
-                    
-                    -- Vẽ Khung Hình Box ESP 2D
-                    if Settings.ESP_Boxes then
-                        local scaleFactor = 2200 / vectorCoord.Z
-                        buildCache.Box.Visible = true
-                        buildCache.Box.Size = Vector2.new(scaleFactor, scaleFactor * 1.4)
-                        buildCache.Box.Position = Vector2.new(vectorCoord.X - scaleFactor / 2, vectorCoord.Y - (scaleFactor * 1.4) / 2)
-                        buildCache.Box.Color = Settings.BoxColor
-                        buildCache.Box.Thickness = 1.5
-                    else
-                        buildCache.Box.Visible = false
-                    end
+                -- Kết xuất nội suy Bezier mượt tuyệt đối không giật khựng góc khuất
+                local lerpedRotation = Camera.CFrame:Lerp(targetLookCFrame, Settings.Smoothness)
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position) * lerpedRotation.Rotation
+            elseif Settings.SmoothingMode == "Exponential" then
+                local expFactor = 1 - math.exp(-Settings.Smoothness * 60 * RunService.RenderStepped:Wait())
+                Camera.CFrame = Camera.CFrame:Lerp(targetLookCFrame, math.clamp(expFactor, 0, 1))
+            elseif Settings.SmoothingMode == "Tuyến Tính" then
+                Camera.CFrame = Camera.CFrame:Lerp(targetLookCFrame, Settings.Smoothness)
+            end
 
-                    -- Vẽ Đường Chỉ Hướng Tracer Lines
-                    if Settings.ESP_Tracers then
-                        buildCache.Tracer.Visible = true
-                        buildCache.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                        buildCache.Tracer.To = Vector2.new(vectorCoord.X, vectorCoord.Y)
-                        buildCache.Tracer.Color = Settings.TracerColor
-                        buildCache.Tracer.Thickness = 1
-                    else
-                        buildCache.Tracer.Visible = false
-                    end
-
-                    -- Vẽ Văn Bản Tên Kẻ Địch
-                    if Settings.ESP_Names then
-                        buildCache.NameLabel.Visible = true
-                        buildCache.NameLabel.Text = p.Name
-                        buildCache.NameLabel.Position = Vector2.new(vectorCoord.X, vectorCoord.Y - (1800 / vectorCoord.Z) / 2 - 16)
-                        buildCache.NameLabel.Color = Settings.TextColor
-                        buildCache.NameLabel.Size = 13
-                        buildCache.NameLabel.Center = true
-                        buildCache.NameLabel.Outline = true
-                    else
-                        buildCache.NameLabel.Visible = false
-                    end
-
-                    -- Vẽ Chỉ Số Khoảng Cách Thực Tế
-                    if Settings.ESP_Distance and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        local distanceCalculated = math.floor((LocalPlayer.Character.HumanoidRootPart.Position - root.Position).Magnitude)
-                        buildCache.DistLabel.Visible = true
-                        buildCache.DistLabel.Text = "[" .. tostring(distanceCalculated) .. "m]"
-                        buildCache.DistLabel.Position = Vector2.new(vectorCoord.X, vectorCoord.Y + (1800 / vectorCoord.Z) / 2 + 4)
-                        buildCache.DistLabel.Color = Color3.fromRGB(255, 230, 100)
-                        buildCache.DistLabel.Size = 11
-                        buildCache.DistLabel.Center = true
-                        buildCache.DistLabel.Outline = true
-                    else
-                        buildCache.DistLabel.Visible = false
-                    end
-                else
-                    ClearPlayerDrawing(p)
-                end
+            -- Vẽ đường chỉ định Line liên kết đến mục tiêu đang bị Lock
+            local screenCoord, visibleOnViewport = Camera:WorldToViewportPoint(partTarget.Position)
+            if visibleOnViewport then
+                TargetLine.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+                TargetLine.To = Vector2.new(screenCoord.X, screenCoord.Y)
+                TargetLine.Color = Settings.RainbowFOV and dynamicColor or Color3.fromRGB(255, 0, 128)
+                TargetLine.Thickness = 1.5
+                TargetLine.Transparency = 0.9
+                TargetLine.Visible = true
             else
-                ClearPlayerDrawing(p)
+                TargetLine.Visible = false
             end
+        else
+            TargetLine.Visible = false
         end
+    else
+        CurrentTarget = nil
+        TargetLine.Visible = false
     end
 end)
 
--- ==================== [ BIÊN DỊCH VÒNG LẶP VẬT LÝ TOÀN DIỆN (HEARTBEAT) ] ====================
+-- ==================== [ VÒNG LẶP ĐỒNG BỘ MÀN HÌNH MONITOR THEO DÕI (HEARTBEAT) ] ====================
 RunService.Heartbeat:Connect(function()
-    local myChar = LocalPlayer.Character
-    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
-    if not myRoot or not myHum then return end
-
-    -- Thiết lập môi trường map đồ họa thế giới
-    if Settings.NightMode then Lighting.TimeOfDay = "00:00:00" end
-    if Settings.FullBright then Lighting.Ambient = Color3.fromRGB(255, 255, 255) end
-    if Settings.AntiLag or Settings.NoTextures then PurgeTexturesEngine() end
-
-    -- Mod Nhân vật
-    if Settings.SpeedHack then myHum.WalkSpeed = Settings.SpeedValue else myHum.WalkSpeed = 16 end
-    if Settings.JumpHack then myHum.JumpPower = Settings.JumpValue else myHum.JumpPower = 50 end
-    if Settings.Spinbot then myRoot.CFrame = myRoot.CFrame * CFrame.Angles(0, math.rad(Settings.SpinSpeed), 0) end
-
-    -- Duyệt tìm mục tiêu tối ưu tối cao
-    local activeTarget = AcquireOptimumTarget()
-
-    -- Quét toàn diện thiết lập Hitbox cho người chơi trong Server
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character then
-            local enemyRoot = p.Character:FindFirstChild(Settings.HitboxPart)
-            if enemyRoot and enemyRoot:IsA("BasePart") then
-                if Settings.Hitbox then
-                    enemyRoot.Size = Vector3.new(Settings.HitboxSize, Settings.HitboxSize, Settings.HitboxSize)
-                    enemyRoot.Transparency = Settings.HitboxTrans
-                    enemyRoot.CanCollide = false
-                else
-                    if enemyRoot.Size.X ~= 2 and enemyRoot.Size.X ~= 1 then
-                        enemyRoot.Size = (Settings.HitboxPart == "Head") and Vector3.new(2, 1, 1) or Vector3.new(2, 2, 1)
-                        enemyRoot.Transparency = 1
-                    end
-                end
+    if Panel.Visible and DeckMonitor.Visible then
+        if CurrentTarget and CurrentTarget.Character then
+            local root = CurrentTarget.Character:FindFirstChild("HumanoidRootPart")
+            local hum = CurrentTarget.Character:FindFirstChildOfClass("Humanoid")
+            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            
+            if root and hum and myRoot then
+                local worldDistance = math.floor((myRoot.Position - root.Position).Magnitude)
+                local velocityVector = root.Velocity
+                
+                MonitorLabel.Text = string.format(
+                    "HỆ THỐNG GIÁM SÁT MỤC TIÊU:\n--------------------\n" ..
+                    "[Mục Tiêu]: %s\n" ..
+                    "[Khoảng Cách]: %d studs (GẦN NHẤT)\n" ..
+                    "[Máu Đối Thủ]: %d / %d\n" ..
+                    "[Vận Tốc X-Y-Z]: %.1f, %.1f, %.1f\n" ..
+                    "[Trạng Thái Lock]: ĐANG KHÓA CHẶT 🎯",
+                    CurrentTarget.Name,
+                    worldDistance,
+                    hum.Health,
+                    hum.MaxHealth,
+                    velocityVector.X,
+                    velocityVector.Y,
+                    velocityVector.Z
+                )
             end
-        end
-    end
-
-    -- Thực thi ngắm bắn Aimlock lên mục tiêu gần cơ thể nhất
-    if activeTarget and activeTarget.Character then
-        local targetPartComp = activeTarget.Character:FindFirstChild(Settings.TargetPart)
-        if targetPartComp then
-            if Settings.Aimlock then
-                local computedVector = targetPartComp.Position + (targetPartComp.Velocity * Settings.Prediction)
-                local smoothedLerp = Camera.CFrame:Lerp(CFrame.lookAt(Camera.CFrame.Position, computedVector), (Settings.Smoothing / 100))
-                Camera.CFrame = smoothedLerp
-            end
-
-            -- Thực thi cấu trúc Kill Aura cận chiến sát thương
-            if Settings.KillAura and (myRoot.Position - targetPartComp.Position).Magnitude < Settings.AuraRange then
-                local equipTool = myChar:FindFirstChildOfClass("Tool")
-                if equipTool then 
-                    equipTool:Activate() 
-                end
-            end
-        end
-    end
-
-    -- Cơ chế Tự động nhấp liên tục (Auto Clicker)
-    if Settings.AutoAttack then
-        local equipTool = myChar:FindFirstChildOfClass("Tool")
-        if equipTool then 
-            equipTool:Activate() 
+        else
+            MonitorLabel.Text = "HỆ THỐNG GIÁM SÁT MỤC TIÊU:\n--------------------\n[Mục Tiêu]: Không tìm thấy mục tiêu khả dụng\n[Khoảng Cách]: 0 studs\n[Máu Đối Thủ]: N/A\n[Vận Tốc]: 0, 0, 0\n[Trạng Thái Lock]: Đang quét..."
         end
     end
 end)
 
--- ==================== [ MÔ-ĐUN VÒNG LẶP XUYÊN TƯỜNG (STEPPED NOCLIP) ] ====================
-RunService.Stepped:Connect(function()
-    if Settings.Noclip and LocalPlayer.Character then
-        for _, objectPart in ipairs(LocalPlayer.Character:GetChildren()) do
-            if objectPart:IsA("BasePart") then
-                objectPart.CanCollide = false
-            end
-        end
-    end
-end)
-
--- ==================== [ HỆ THỐNG KIỂM SOÁT NHẢY VÔ HẠN (INF JUMP) ] ====================
-UserInputService.JumpRequest:Connect(function()
-    if Settings.InfJump and LocalPlayer.Character then
-        local currentHum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if currentHum then 
-            currentHum:ChangeState(Enum.HumanoidStateType.Jumping) 
-        end
-    end
-end)
-
--- Phát tín hiệu khởi tạo thành công hệ thống tối cao
-BuildNotification("MINH MEO OMNIVERSE", "Zenonix Engine v4.0 Ultimate All Games hoạt động ổn định!", Color3.fromRGB(0, 255, 255))
+-- Tự động kích hoạt thông báo vận hành mượt mà không cần bấm nút xác nhận
+TriggerAlert("MINH MEO OMNIVERSE", "Pure Aimlock Engine v5.0 Loaded Successfully!", Color3.fromRGB(0, 255, 255))
